@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DoomSlop</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <!-- Crosshair + readouts. Text is filled in by src/hud.js. -->
+    <div id="hud" aria-hidden="true">
+      <div id="crosshair"></div>
+      <div id="readout">
+        <span id="health">HP --</span>
+        <span id="score">SCORE --</span>
+      </div>
+    </div>
+
+    <!-- Click-to-start / paused overlay. Shown whenever the pointer is unlocked. -->
+    <div id="overlay">
+      <h1>DOOMSLOP</h1>
+      <p>Click to play</p>
+      <p class="keys">WASD move &middot; mouse look &middot; click shoot &middot; Esc pause</p>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

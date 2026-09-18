@@ -1,0 +1,78 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: #d8d8d8;
+}
+
+#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0.75;
+}
+
+#readout {
+  position: absolute;
+  left: 24px;
+  bottom: 20px;
+  display: flex;
+  gap: 24px;
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  text-shadow: 0 1px 2px #000;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: pointer;
+  text-align: center;
+}
+
+/* main.js toggles this class when the pointer locks. */
+#overlay.hidden {
+  display: none;
+}
+
+#overlay h1 {
+  font-size: 56px;
+  letter-spacing: 0.18em;
+  color: #c8503c;
+}
+
+#overlay .keys {
+  font-size: 13px;
+  opacity: 0.6;
+}
