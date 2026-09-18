@@ -25,6 +25,11 @@ export class Player {
     // Reused every frame so the loop doesn't allocate a Vector3 per tick.
     this._move = new THREE.Vector3();
 
+    // Set by main.js: (amount) => void, fired when the player actually loses
+    // health. Damage arrives from enemies.js, which main.js never sees, so
+    // without this hook feedback for a hit has nowhere to attach.
+    this.onDamage = null;
+
     this._syncCamera();
   }
 
@@ -82,7 +87,12 @@ export class Player {
   }
 
   takeDamage(amount) {
+    const before = this.health;
     this.health = Math.max(0, this.health - amount);
+
+    // Only report a real loss, so a hit landing at 0 HP doesn't re-trigger
+    // feedback for damage that didn't happen.
+    if (this.health < before) this.onDamage?.(amount);
   }
 
   isDead() {

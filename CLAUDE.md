@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The full loop works — look, move, shoot, enemies spawn and close in, contact damage, death, restart. There are no `TODO` stubs left. Difficulty ramps by shortening the spawn interval from `ENEMY.spawnInterval` to `ENEMY.spawnIntervalMin` over `ENEMY.rampDuration`.
 
-Not implemented (deliberately, not oversights): sound, multiple enemy types, weapon variety, persistent high score, mobile/touch controls.
+Not implemented (deliberately, not oversights): multiple enemy types, weapon variety, persistent high score, mobile/touch controls.
 
 ## Commands
 
@@ -36,6 +36,7 @@ To actually check the game runs, drive headless Chrome. `playwright-core` is ins
 - `%TEMP%\doomslop-gameplay.mjs` — 19 assertions covering look/move/bounds/spawn/steering/shooting/damage/death/restart. Run it after any gameplay change.
 - `%TEMP%\doomslop-effects.mjs` — 33 assertions on tracer origin/endpoints/lifetime, hitsparks on each surface type, and particle spawn/decay/pool-ceiling, plus effect screenshots. The muzzle assertions project the tracer's start point to NDC and sweep the pitch range, since "bottom center of the screen" is only checkable in screen space.
 - `%TEMP%\doomslop-hitsparks.mjs` — screenshots of a floor hit and a wall hit. Assertions can't tell whether sparks *read*; two bugs this project has already had (screen-filling muzzle sparks, a long diagonal tracer) passed every assertion and were only caught by looking.
+- `%TEMP%\doomslop-sound.mjs` — 19 assertions on the audio. It taps the master gain with an `AnalyserNode` and measures peak amplitude, so it proves each effect actually *generates signal* rather than merely not throwing — the audio equivalent of looking at a screenshot. Also covers autoplay hygiene, event wiring, and clipping under sustained fire.
 
 When a driver places an enemy by hand, **keep it above the floor.** The arena is solid, so a target buried under `y=0` is legitimately unhittable — a test that positions one there is testing nothing. This is how the gameplay driver used to place its target.
 
@@ -78,6 +79,12 @@ Boundaries that are load-bearing:
   - `shot.normal` is the **world-space** surface normal, already flipped to face back toward the shooter. `face.normal` is object-local and enemies tumble, so it has to be run through a normal matrix; `_impactNormal()` does that and falls back to the reversed shot direction if a hit carries no face data.
   - **`WEAPON.muzzleOffset` is specified in screen space, not world units** — `screenX`/`screenY` are normalized device coords (`0,0` is the crosshair, `-1` is the bottom/left edge) and `forward` only sets depth. `weapon.fire()` converts them using the live `camera.fov`/`aspect`, so the muzzle holds its on-screen spot when the FOV or window changes. Expressing it as a world offset instead looks right at one FOV and drifts at every other.
   - That offset puts the muzzle ~1.3 units *below* the eye, which swings it under the floor past ~15° of downward pitch and lets the floor clip the start of the tracer. `muzzleOffset.minHeight` clamps world Y to stop that. Don't remove it without re-running the pitch sweep in the effects driver.
+
+- **`sound.js` synthesizes everything; there are no audio assets.** Oscillators plus one shared noise buffer, via the Web Audio API. That's a deliberate match for the flat-color visuals and keeps the repo asset-free — don't add sample files without a reason.
+  - **The `AudioContext` is built lazily, inside `resume()`.** Constructing one at import time leaves it suspended and logs an autoplay warning, and the drivers treat console warnings as failures. `resume()` is called from the overlay click, which is the one gesture every path (start, resume, retry) passes through.
+  - `OscillatorNode`/`AudioBufferSourceNode` are single-use by spec — they can't be restarted, so each sound builds fresh ones. Unlike the effects pools, there is nothing poolable here; that is not an oversight.
+  - **Damage feedback hangs off `player.onDamage`.** `enemies.js` calls `player.takeDamage()` directly and main.js never sees it, so without that hook there is nowhere to attach a hit sound. `takeDamage` only fires it when health actually drops, so a hit landing at 0 HP stays silent.
+  - Death releases the pointer lock, which would otherwise fire the pause click on top of dying. `onLockChange` gates the click on `!gameOver` for that reason.
 
 ## The matrixWorld invariant (read this before touching hit detection)
 

@@ -5,6 +5,7 @@ import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
 import { Weapon } from './weapon.js';
 import { Effects } from './effects.js';
+import { Sound } from './sound.js';
 import { Hud } from './hud.js';
 import { EFFECTS } from './config.js';
 import * as config from './config.js';
@@ -27,6 +28,11 @@ const hud = new Hud();
 let score = 0;
 const enemies = new EnemyManager(scene, player);
 const effects = new Effects(scene);
+const sound = new Sound();
+
+// Damage originates in enemies.js, which never sees main.js — the hook is how
+// feedback for a hit gets attached without enemies or player knowing about sound.
+player.onDamage = () => sound.playerDamaged();
 
 const weapon = new Weapon(
   camera,
@@ -34,8 +40,10 @@ const weapon = new Weapon(
   world.solids,
   (earned) => {
     score += earned;
+    sound.enemyKilled();
   },
   (shot) => {
+    sound.shoot();
     // Hitmarker stays enemy-only. Shots also land on the floor and walls now, so
     // flashing it on every impact would drain it of meaning.
     hud.shotFired(shot.hitEnemy);
@@ -72,14 +80,24 @@ resize();
 
 // Pointer lock drives pause: locked means playing, unlocked means paused.
 hud.overlayEl.addEventListener('click', () => {
+  // Browsers only allow audio to start from a user gesture, and this click is
+  // the one the game always passes through — to start, to resume, and to retry.
+  sound.resume();
   if (gameOver) restart();
   input.requestLock();
 });
 
 input.onLockChange = (locked) => {
   running = locked;
-  if (locked) hud.hideOverlay();
-  else if (!gameOver) hud.showOverlay('PAUSED', 'Click to resume');
+  if (locked) {
+    hud.hideOverlay();
+    sound.click(true);
+  } else if (!gameOver) {
+    hud.showOverlay('PAUSED', 'Click to resume');
+    sound.click(false);
+  }
+  // Death also releases the lock, but endGame() owns that feedback — a pause
+  // click on top of dying would read as the game acknowledging a keypress.
 };
 
 function restart() {
@@ -134,6 +152,7 @@ if (import.meta.env.DEV) {
     enemies,
     weapon,
     effects,
+    sound,
     input,
     // Live-tweakable: the config objects are read at use time, so changing a
     // value here takes effect on the next frame. Handy for balancing by hand.

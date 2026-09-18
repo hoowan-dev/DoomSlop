@@ -28,6 +28,7 @@ The `dist/` JS bundle is ~540 kB (135 kB gzipped), nearly all of it three.js. Vi
 | [src/enemies.js](src/enemies.js) | Spawning, movement, contact damage, death |
 | [src/weapon.js](src/weapon.js) | Hitscan raycast, fire rate |
 | [src/effects.js](src/effects.js) | Pooled tracer lines and spark particles |
+| [src/sound.js](src/sound.js) | Synthesized sound effects (Web Audio, no asset files) |
 | [src/hud.js](src/hud.js) | DOM crosshair and readouts |
 
 ## Playing
@@ -36,8 +37,10 @@ Click to lock the mouse, `WASD` to move, mouse to aim, hold click to fire, `Esc`
 
 Every shot draws a hitscan tracer that rises from the bottom center of the screen to wherever the bullet landed, throws sparks off the muzzle, and throws hitsparks off the surface it struck — warm and bigger on an enemy, cool and paler on the floor or a wall. The arena is solid, so bullets stop at it rather than passing through; only a shot up over the open-topped walls hits nothing, and that one gets no hitsparks. Aim comes from the crosshair, not the muzzle, so the offset start point doesn't affect where shots land.
 
-All balance numbers live in [src/config.js](src/config.js) — that's the file to edit if it's too easy or too hard. Effect tuning (tracer lifetime, spark counts, colors, gravity) is in the `EFFECTS` block there.
+Four sound effects play: firing, killing an enemy, taking damage, and a click when you pause or resume (rising to resume, falling to pause). They're synthesized at runtime from oscillators and a noise buffer — there are no audio files to load. Audio starts on the click that locks the mouse, since browsers only allow it from a user gesture.
+
+All balance numbers live in [src/config.js](src/config.js) — that's the file to edit if it's too easy or too hard. Effect tuning (tracer lifetime, spark counts, colors, gravity) is in the `EFFECTS` block there; pitches, durations and volume are in `SOUND`, where `masterVolume` turns everything down at once.
 
 ## Not implemented
 
-Sound, multiple enemy types, weapon variety, a persistent high score, and mobile/touch controls. The arena is also a bare box — no cover, no level geometry.
+Multiple enemy types, weapon variety, a persistent high score, and mobile/touch controls. The arena is also a bare box — no cover, no level geometry.

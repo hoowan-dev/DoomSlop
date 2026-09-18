@@ -48,6 +48,45 @@ export const WEAPON = {
   },
 };
 
+// Every effect is a pitch-swept oscillator, most with a noise burst layered under
+// it for attack. Durations in seconds, pitches in Hz, gains 0..1 before the
+// master. See sound.js — nothing here is a file path; it's all synthesized.
+export const SOUND = {
+  masterVolume: 0.35, // leaves headroom for several effects at once
+
+  shoot: {
+    duration: 0.09, // short: at fireInterval 0.18 these would otherwise pile up
+    gain: 0.35,
+    pitchFrom: 160,
+    pitchTo: 55,
+    noiseGain: 0.3,
+    cutoff: 2600,
+  },
+  kill: {
+    duration: 0.22,
+    gain: 0.3,
+    pitchFrom: 640,
+    pitchTo: 180,
+    noiseDuration: 0.06, // just a tick of grit on the attack
+    noiseGain: 0.15,
+    cutoff: 4200,
+  },
+  damage: {
+    duration: 0.35, // longest of the four — taking a hit should land
+    gain: 0.45,
+    pitchFrom: 200,
+    pitchTo: 60,
+    noiseGain: 0.4,
+    cutoff: 900,
+  },
+  click: {
+    duration: 0.06,
+    gain: 0.25,
+    pitchLow: 440, // swept low->high to resume, high->low to pause
+    pitchHigh: 880,
+  },
+};
+
 export const EFFECTS = {
   // Tracers are pooled; a shot fired while the pool is full reuses the oldest.
   tracerPool: 12,
