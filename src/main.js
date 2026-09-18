@@ -4,7 +4,10 @@ import { Input } from './input.js';
 import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
 import { Weapon } from './weapon.js';
+import { Effects } from './effects.js';
 import { Hud } from './hud.js';
+import { EFFECTS } from './config.js';
+import * as config from './config.js';
 
 // Bootstrap + game loop. Everything else hangs off here.
 
@@ -23,13 +26,35 @@ const hud = new Hud();
 
 let score = 0;
 const enemies = new EnemyManager(scene, player);
+const effects = new Effects(scene);
+
 const weapon = new Weapon(
   camera,
   enemies,
+  world.solids,
   (earned) => {
     score += earned;
   },
-  (hit) => hud.shotFired(hit !== null)
+  (shot) => {
+    // Hitmarker stays enemy-only. Shots also land on the floor and walls now, so
+    // flashing it on every impact would drain it of meaning.
+    hud.shotFired(shot.hitEnemy);
+    effects.tracer(shot.muzzle, shot.endpoint);
+
+    // Sparks off the muzzle on every shot, sprayed forward.
+    effects.burst(shot.muzzle, shot.direction, EFFECTS.muzzleSparks, EFFECTS.sparkColor);
+
+    // Hitsparks wherever the bullet landed, sprayed off the surface normal.
+    // Enemies get a bigger, warmer burst than scenery so kills still read.
+    if (shot.hit) {
+      effects.burst(
+        shot.hit.point,
+        shot.normal,
+        shot.hitEnemy ? EFFECTS.impactSparks : EFFECTS.worldImpactSparks,
+        shot.hitEnemy ? EFFECTS.impactColor : EFFECTS.worldImpactColor
+      );
+    }
+  }
 );
 
 let running = false;
@@ -59,6 +84,7 @@ input.onLockChange = (locked) => {
 
 function restart() {
   enemies.clear();
+  effects.clear();
   player.reset();
   score = 0;
   gameOver = false;
@@ -88,6 +114,9 @@ function frame() {
     player.update(dt);
     enemies.update(dt);
     weapon.update(dt, input.firing);
+    // After weapon.update so a shot fired this frame renders its tracer
+    // immediately rather than a frame late.
+    effects.update(dt);
 
     if (player.isDead()) endGame();
   }
@@ -104,7 +133,11 @@ if (import.meta.env.DEV) {
     player,
     enemies,
     weapon,
+    effects,
     input,
+    // Live-tweakable: the config objects are read at use time, so changing a
+    // value here takes effect on the next frame. Handy for balancing by hand.
+    config,
     getScore: () => score,
     isRunning: () => running,
     isGameOver: () => gameOver,
