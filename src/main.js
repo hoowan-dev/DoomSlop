@@ -66,13 +66,18 @@ function endGame() {
   hud.showOverlay('YOU DIED', `Score ${score} — click to retry`);
 }
 
-const clock = new THREE.Clock();
+// Timer (not the deprecated Clock) — connect() wires up the Page Visibility
+// API so a backgrounded tab resumes with a sane delta instead of a huge one.
+const timer = new THREE.Timer();
+timer.connect(document);
 
 function frame() {
   requestAnimationFrame(frame);
 
-  // Clamp dt so a backgrounded tab doesn't teleport everything on return.
-  const dt = Math.min(clock.getDelta(), 0.1);
+  timer.update();
+  // Belt and suspenders on top of Timer's visibility handling: a single long
+  // frame (GC pause, slow hitch) shouldn't tunnel anything through a wall.
+  const dt = Math.min(timer.getDelta(), 0.1);
 
   if (running) {
     player.update(dt);
