@@ -23,9 +23,14 @@ const hud = new Hud();
 
 let score = 0;
 const enemies = new EnemyManager(scene, player);
-const weapon = new Weapon(camera, enemies, (earned) => {
-  score += earned;
-});
+const weapon = new Weapon(
+  camera,
+  enemies,
+  (earned) => {
+    score += earned;
+  },
+  (hit) => hud.shotFired(hit !== null)
+);
 
 let running = false;
 let gameOver = false;
@@ -89,6 +94,21 @@ function frame() {
 
   hud.update(player.health, score);
   renderer.render(scene, camera);
+}
+
+// Dev-only handle for poking at game state from the console or a headless
+// driver. `import.meta.env.DEV` is statically false in a production build, so
+// Vite strips this block entirely.
+if (import.meta.env.DEV) {
+  window.__game = {
+    player,
+    enemies,
+    weapon,
+    input,
+    getScore: () => score,
+    isRunning: () => running,
+    isGameOver: () => gameOver,
+  };
 }
 
 frame();

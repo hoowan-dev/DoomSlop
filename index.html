@@ -16,6 +16,9 @@
     <!-- Crosshair + readouts. Text is filled in by src/hud.js. -->
     <div id="hud" aria-hidden="true">
       <div id="crosshair"></div>
+      <!-- Muzzle flash: a warm glow at the bottom of the screen, since there's
+           no weapon model to flash. hud.js retriggers its CSS animation. -->
+      <div id="muzzle"></div>
       <div id="readout">
         <span id="health">HP --</span>
         <span id="score">SCORE --</span>

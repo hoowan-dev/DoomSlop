@@ -19,7 +19,9 @@ export const ENEMY = {
   radius: 0.6,
   health: 1, // hits to kill
   touchDamage: 25, // damage dealt when an enemy reaches the player
-  spawnInterval: 1.6, // seconds between spawns
+  spawnInterval: 1.6, // seconds between spawns at the start of a round
+  spawnIntervalMin: 0.45, // floor the interval ramps down to
+  rampDuration: 90, // seconds to go from spawnInterval to spawnIntervalMin
   spawnDistance: 25, // how far from the player they appear
   hoverHeight: 1.6,
   scoreValue: 100,

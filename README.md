@@ -29,12 +29,12 @@ The `dist/` JS bundle is ~540 kB (135 kB gzipped), nearly all of it three.js. Vi
 | [src/weapon.js](src/weapon.js) | Hitscan raycast, fire rate |
 | [src/hud.js](src/hud.js) | DOM crosshair and readouts |
 
-## State: skeleton
+## Playing
 
-The scaffolding runs — the arena renders, pointer lock and pause work, the loop ticks every system — but the gameplay itself is unwritten. Each stub carries `TODO` comments describing what to implement:
+Click to lock the mouse, `WASD` to move, mouse to aim, hold click to fire, `Esc` to pause. Red floaters spawn at a random bearing 25 units out and close in; each is a one-shot kill worth 100. Touching you costs 25 HP and consumes the enemy, so four contacts ends the run. The spawn interval tightens from 1.6s to 0.45s over the first 90 seconds.
 
-1. **[src/player.js](src/player.js)** — mouse look (yaw/pitch with clamped pitch), WASD movement relative to facing, arena bounds clamping.
-2. **[src/enemies.js](src/enemies.js)** — spawn on a timer at a random bearing, steer toward the player on the XZ plane, damage the player on contact.
-3. **[src/weapon.js](src/weapon.js)** — fire while held on a cooldown; the raycast and scoring plumbing is already wired.
+All balance numbers live in [src/config.js](src/config.js) — that's the file to edit if it's too easy or too hard.
 
-Doing those three in order gets you a playable game. Everything else — hit feedback, difficulty ramp, sound, more enemy types — is on top of that.
+## Not implemented
+
+Sound, multiple enemy types, weapon variety, a persistent high score, and mobile/touch controls. The arena is also a bare box — no cover, no level geometry.

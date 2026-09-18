@@ -37,6 +37,40 @@ body {
   opacity: 0.75;
 }
 
+/* Hit marker: the crosshair pops bigger and red for a moment. */
+#crosshair.hit {
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  background: #ff5a3c;
+  opacity: 1;
+}
+
+#muzzle {
+  position: absolute;
+  left: 50%;
+  bottom: -60px;
+  width: 340px;
+  height: 160px;
+  margin-left: -170px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255, 216, 150, 0.85), transparent 70%);
+  opacity: 0;
+}
+
+#muzzle.firing {
+  animation: muzzle 90ms ease-out;
+}
+
+@keyframes muzzle {
+  from {
+    opacity: 0.9;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
 #readout {
   position: absolute;
   left: 24px;

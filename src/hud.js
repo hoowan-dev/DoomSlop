@@ -6,9 +6,29 @@ export class Hud {
     this.healthEl = document.getElementById('health');
     this.scoreEl = document.getElementById('score');
     this.overlayEl = document.getElementById('overlay');
+    this.crosshairEl = document.getElementById('crosshair');
+    this.flashEl = document.getElementById('muzzle');
 
     this._health = null;
     this._score = null;
+    this._hitTimer = null;
+  }
+
+  /**
+   * Shot feedback. Both effects are CSS animations retriggered by removing and
+   * re-adding the class — without the reflow between, a second shot inside the
+   * animation window wouldn't replay it.
+   */
+  shotFired(didHit) {
+    this.flashEl.classList.remove('firing');
+    void this.flashEl.offsetWidth;
+    this.flashEl.classList.add('firing');
+
+    if (!didHit) return;
+
+    this.crosshairEl.classList.add('hit');
+    clearTimeout(this._hitTimer);
+    this._hitTimer = setTimeout(() => this.crosshairEl.classList.remove('hit'), 120);
   }
 
   update(health, score) {
