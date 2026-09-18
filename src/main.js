@@ -7,6 +7,7 @@ import { Weapon } from './weapon.js';
 import { Effects } from './effects.js';
 import { Sound } from './sound.js';
 import { Hud } from './hud.js';
+import { Minimap } from './minimap.js';
 import { EFFECTS } from './config.js';
 import * as config from './config.js';
 
@@ -24,6 +25,7 @@ const world = createWorld(scene);
 const input = new Input(canvas);
 const player = new Player(camera, input, world);
 const hud = new Hud();
+const minimap = new Minimap(camera);
 
 let score = 0;
 const enemies = new EnemyManager(scene, player);
@@ -139,7 +141,11 @@ function frame() {
     if (player.isDead()) endGame();
   }
 
+  // Outside the running check, like the HUD: both stay drawn while paused
+  // instead of going blank behind the overlay.
   hud.update(player.health, score);
+  minimap.draw(player, enemies.enemies);
+
   renderer.render(scene, camera);
 }
 
@@ -153,6 +159,7 @@ if (import.meta.env.DEV) {
     weapon,
     effects,
     sound,
+    minimap,
     input,
     // Live-tweakable: the config objects are read at use time, so changing a
     // value here takes effect on the next frame. Handy for balancing by hand.

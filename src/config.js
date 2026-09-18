@@ -48,6 +48,23 @@ export const WEAPON = {
   },
 };
 
+// Colors here are CSS strings, not the 0x literals the rest of this file uses —
+// the minimap is a 2D canvas in the HUD, not three.js geometry.
+export const MINIMAP = {
+  size: 148, // diameter in CSS pixels
+  range: 32, // world units from the center to the rim; enemies spawn at 25, so
+  // they appear just inside the edge rather than popping in from nowhere
+  background: 'rgba(12, 14, 20, 0.55)',
+
+  coneRange: 26, // how far the view cone reaches, in world units
+  coneColor: 'rgba(200, 220, 255, 0.16)',
+
+  playerColor: '#ffffff',
+  playerRadius: 3.5, // CSS pixels
+  enemyColor: '#e2604a',
+  enemyRadius: 2.6,
+};
+
 // Every effect is a pitch-swept oscillator, most with a noise burst layered under
 // it for attack. Durations in seconds, pitches in Hz, gains 0..1 before the
 // master. See sound.js — nothing here is a file path; it's all synthesized.

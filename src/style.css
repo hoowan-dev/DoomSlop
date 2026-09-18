@@ -82,6 +82,18 @@ body {
   text-shadow: 0 1px 2px #000;
 }
 
+/* Width/height are set by minimap.js from MINIMAP.size — only the framing lives
+   here. border-radius does the circular mask; the canvas clips to it too, so a
+   dot at the rim can't leak into the corners. */
+#minimap {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(190, 205, 235, 0.28);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
 #overlay {
   position: fixed;
   inset: 0;

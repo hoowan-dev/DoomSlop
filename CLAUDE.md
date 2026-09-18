@@ -36,11 +36,12 @@ To actually check the game runs, drive headless Chrome. `playwright-core` is ins
 - `%TEMP%\doomslop-gameplay.mjs` — 19 assertions covering look/move/bounds/spawn/steering/shooting/damage/death/restart. Run it after any gameplay change.
 - `%TEMP%\doomslop-effects.mjs` — 33 assertions on tracer origin/endpoints/lifetime, hitsparks on each surface type, and particle spawn/decay/pool-ceiling, plus effect screenshots. The muzzle assertions project the tracer's start point to NDC and sweep the pitch range, since "bottom center of the screen" is only checkable in screen space.
 - `%TEMP%\doomslop-hitsparks.mjs` — screenshots of a floor hit and a wall hit. Assertions can't tell whether sparks *read*; two bugs this project has already had (screen-filling muzzle sparks, a long diagonal tracer) passed every assertion and were only caught by looking.
+- `%TEMP%\doomslop-minimap.mjs` — 10 assertions on the minimap, plus a full-screen and a close-up screenshot. It reads pixels back off the minimap canvas with `getImageData` and finds the centroid of the enemy dot, then sweeps 25 (yaw, bearing) pairs asserting each dot lands at the right *bearing* clockwise from straight up. Numbers, not eyeballs: a mirrored or quarter-turn-off radar looks entirely plausible in a screenshot. Filter Chrome's `willReadFrequently` warning in any replacement — the driver's own readback triggers it, not the game. The full-screen shot is the best check of all: with enemies at known bearings, the dots inside the cone and the enemies visible in the 3D view have to be on the same sides, which no amount of self-consistent minimap math can fake.
 - `%TEMP%\doomslop-sound.mjs` — 19 assertions on the audio. It taps the master gain with an `AnalyserNode` and measures peak amplitude, so it proves each effect actually *generates signal* rather than merely not throwing — the audio equivalent of looking at a screenshot. Also covers autoplay hygiene, event wiring, and clipping under sustained fire.
 
 When a driver places an enemy by hand, **keep it above the floor.** The arena is solid, so a target buried under `y=0` is legitimately unhittable — a test that positions one there is testing nothing. This is how the gameplay driver used to place its target.
 
-`main.js` exposes `window.__game` (player, enemies, weapon, input, score/state getters) behind `import.meta.env.DEV`, which is how the gameplay driver reaches in. Vite strips it from production builds — verified by grepping `dist/`.
+`main.js` exposes `window.__game` (player, enemies, weapon, effects, sound, minimap, input, config, score/state getters) behind `import.meta.env.DEV`, which is how the gameplay driver reaches in. Vite strips it from production builds — verified by grepping `dist/`.
 
 Two things the gameplay driver learned the hard way, worth preserving in any replacement:
 
@@ -86,6 +87,14 @@ Boundaries that are load-bearing:
   - **Damage feedback hangs off `player.onDamage`.** `enemies.js` calls `player.takeDamage()` directly and main.js never sees it, so without that hook there is nowhere to attach a hit sound. `takeDamage` only fires it when health actually drops, so a hit landing at 0 HP stays silent.
   - Death releases the pointer lock, which would otherwise fire the pause click on top of dying. `onLockChange` gates the click on `!gameOver` for that reason.
 
+- **`minimap.js` is a 2D canvas, not three.js.** It's part of the HUD layer, drawn with the Canvas 2D API on its own `<canvas id="minimap">`; the scene never contains it and the WebGL renderer never touches it. Same reasoning as the rest of the HUD — cheaper and far easier to style than in-scene geometry. Consequently `MINIMAP` colors in `config.js` are **CSS strings**, not the `0x` literals everything else uses.
+  - **The map rotates; the player doesn't.** The player sits pinned at the center pointing up and the world spins around them, so map-up is always straight ahead. That's why the view cone is drawn *fixed*, pointing up, rather than swung around by the yaw — swinging it would be the non-rotating (north-up) convention, and doing both at once is the classic way to get a radar that's subtly wrong.
+  - The whole rotation is one `ctx.rotate(player.yaw)` before plotting enemies at their raw world `(dx, dz)` offsets. Positive `yaw` is the right amount in the right direction only because world `+X/+Z` map to canvas `+x/+y` and canvas rotation is clockwise; flipping either convention needs `-yaw`. Verify with the minimap driver rather than by reasoning — this sign is easy to talk yourself into.
+  - Cone half-angle is the **horizontal** FOV, `atan(tan(vFov/2) * aspect)`, read from the live camera. `camera.fov` is vertical, so using it directly draws a cone narrower than what the player actually sees.
+  - main.js passes `enemies.enemies` (the raw `{mesh, health}[]`), not `hitboxes()` — the latter allocates a new array via `.map()` and this runs every frame.
+  - `draw()` is called **outside** the `if (running)` check, alongside `hud.update()`, so the radar stays visible behind the pause overlay instead of going blank.
+  - The circular mask is CSS `border-radius: 50%` *and* a `ctx.clip()` arc. Both, deliberately: the CSS handles the rim border, the clip keeps a dot near the rim from being drawn into the square's corners. Note that a clip region survives until `restore()`, hence the `save()`/`restore()` around the whole frame.
+
 ## The matrixWorld invariant (read this before touching hit detection)
 
 `Raycaster` reads `object.matrixWorld` and **never refreshes it**, and three only recomputes world matrices inside `renderer.render()` — which runs *after* every system's `update()` in a frame. So anything that mutates a transform and is then raycast in the same frame must call `updateMatrixWorld()` itself.
@@ -110,4 +119,4 @@ If shots visibly pass through enemies, suspect a missing `updateMatrixWorld()` b
 
 ## Conventions
 
-Plain ES modules, no TypeScript, no JSX, no build step beyond Vite. The HUD is DOM on top of the canvas (`hud.js` + `style.css`), not drawn in the scene — cheaper and easier to style. Comments explain *why* a boundary exists, not what a line does; match that density.
+Plain ES modules, no TypeScript, no JSX, no build step beyond Vite. The HUD is DOM on top of the canvas (`hud.js`, `minimap.js`, `style.css`), not drawn in the scene — cheaper and easier to style. Comments explain *why* a boundary exists, not what a line does; match that density.

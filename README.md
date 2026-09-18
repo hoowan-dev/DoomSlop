@@ -30,6 +30,7 @@ The `dist/` JS bundle is ~540 kB (135 kB gzipped), nearly all of it three.js. Vi
 | [src/effects.js](src/effects.js) | Pooled tracer lines and spark particles |
 | [src/sound.js](src/sound.js) | Synthesized sound effects (Web Audio, no asset files) |
 | [src/hud.js](src/hud.js) | DOM crosshair and readouts |
+| [src/minimap.js](src/minimap.js) | Rotating top-down radar (2D canvas) |
 
 ## Playing
 
@@ -39,7 +40,9 @@ Every shot draws a hitscan tracer that rises from the bottom center of the scree
 
 Four sound effects play: firing, killing an enemy, taking damage, and a click when you pause or resume (rising to resume, falling to pause). They're synthesized at runtime from oscillators and a noise buffer — there are no audio files to load. Audio starts on the click that locks the mouse, since browsers only allow it from a user gesture.
 
-All balance numbers live in [src/config.js](src/config.js) — that's the file to edit if it's too easy or too hard. Effect tuning (tracer lifetime, spark counts, colors, gravity) is in the `EFFECTS` block there; pitches, durations and volume are in `SOUND`, where `masterVolume` turns everything down at once.
+A circular radar in the top right shows you at the center and every enemy within 32 units as a red dot, with a pale wedge for your field of view. It rotates with you: you always point up the map and the world turns around you, so a dot above center is something ahead of you and a dot inside the wedge is something you can already see.
+
+All balance numbers live in [src/config.js](src/config.js) — that's the file to edit if it's too easy or too hard. Effect tuning (tracer lifetime, spark counts, colors, gravity) is in the `EFFECTS` block there; pitches, durations and volume are in `SOUND`, where `masterVolume` turns everything down at once; the radar's size, range and colors are in `MINIMAP`.
 
 ## Not implemented
 
