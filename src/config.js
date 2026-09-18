@@ -24,7 +24,42 @@ export const ENEMY = {
   rampDuration: 90, // seconds to go from spawnInterval to spawnIntervalMin
   spawnDistance: 25, // how far from the player they appear
   hoverHeight: 1.6,
+  spin: 1, // multiplier on the cosmetic tumble rate
   scoreValue: 100,
+};
+
+// The round boss. Every field ENEMY has, because enemies.js reads whichever of
+// the two blocks an enemy was spawned from — add a per-enemy tunable to one and
+// it has to exist in the other. `attackInterval` is the exception: only the boss
+// survives contact, so only the boss needs a rate limit on its hits.
+export const BOSS = {
+  speed: 1.3, // slower than a floater; the player can always outrun it
+  radius: 3,
+  health: 50, // shots to kill
+  touchDamage: 20,
+  // Unlike a floater the boss isn't consumed when it reaches the player — it has
+  // to be shot down. Without a cooldown it would land a hit every frame and
+  // erase a full health bar in a fraction of a second.
+  attackInterval: 1.2,
+  // Must stay below arenaSize/2 - radius, or every bearing is out of bounds and
+  // _spawnPoint() falls through to its center-ward fallback on every attempt.
+  spawnDistance: 20,
+  hoverHeight: 3.4,
+  spin: 0.35, // a floater's tumble rate on something this big looks frantic
+  scoreValue: 5000, // 50 shots, priced at a floater's 100 apiece
+  healthBarLift: 1.4, // world units above the boss's crown to float the bar
+};
+
+// The core loop: clear killsPerRound floaters, fight the boss, next round. See
+// rounds.js, which owns the state machine.
+export const ROUNDS = {
+  killsPerRound: 30, // shot kills that summon the boss; contact deaths don't count
+  // Dead air around the announcements, in seconds. Both are a little longer than
+  // the 1.2s flash animation in style.css, so the text has landed before the boss
+  // walks in / the floaters come back. They're also the only breather the player
+  // gets in the whole game, so don't trim them much.
+  bossDelay: 1.5, // BOSS ROUND flash -> boss appears
+  roundDelay: 1.5, // boss dies -> floaters resume
 };
 
 export const WEAPON = {
@@ -63,6 +98,24 @@ export const MINIMAP = {
   playerRadius: 3.5, // CSS pixels
   enemyColor: '#e2604a',
   enemyRadius: 2.6,
+  // The boss is 5x a floater's world radius, so drawing it as an identical dot
+  // would misrepresent the fight it is.
+  bossColor: '#b957d9',
+  bossRadius: 6,
+};
+
+// Floating "+100" over a kill. Timing lives here rather than in a CSS animation
+// because hud.js has to drive the rise and the fade itself anyway — it's moving a
+// world-anchored point every frame — and splitting the duration across two files
+// is how the two copies drift apart. The color and font are in style.css.
+export const POPUP = {
+  pool: 12, // preallocated divs; a kill with the pool full recycles the oldest,
+  // same rule as the tracer pool. At fireInterval 0.18 a single stream of kills
+  // can only have ~5 alive at once, so this has plenty of slack.
+  life: 0.9, // seconds on screen
+  lift: 0.5, // world units above the kill point where it starts
+  rise: 1.8, // further world units it drifts up over its life
+  fadeAt: 0.45, // fraction of life left when it starts fading; holds opaque above this
 };
 
 // Every effect is a pitch-swept oscillator, most with a noise burst layered under

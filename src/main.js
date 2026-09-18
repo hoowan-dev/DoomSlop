@@ -8,6 +8,7 @@ import { Effects } from './effects.js';
 import { Sound } from './sound.js';
 import { Hud } from './hud.js';
 import { Minimap } from './minimap.js';
+import { Rounds } from './rounds.js';
 import { EFFECTS } from './config.js';
 import * as config from './config.js';
 
@@ -24,7 +25,7 @@ const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 200);
 const world = createWorld(scene);
 const input = new Input(canvas);
 const player = new Player(camera, input, world);
-const hud = new Hud();
+const hud = new Hud(camera);
 const minimap = new Minimap(camera);
 
 let score = 0;
@@ -32,9 +33,24 @@ const enemies = new EnemyManager(scene, player);
 const effects = new Effects(scene);
 const sound = new Sound();
 
+// The round loop. It drives enemies (wiping the field, gating spawns, summoning
+// the boss) and reports its announcements back out, so it needs the manager but
+// nothing needs it.
+const rounds = new Rounds(enemies, (text) => hud.announce(text));
+
 // Damage originates in enemies.js, which never sees main.js — the hook is how
 // feedback for a hit gets attached without enemies or player knowing about sound.
 player.onDamage = () => sound.playerDamaged();
+
+// Likewise for kills: enemies.js reports a shot death, rounds.js counts it.
+// Routing it through here keeps the two from knowing about each other.
+enemies.onDefeat = (enemy) => {
+  rounds.enemyDefeated(enemy);
+  // The score popup needs both the payout and where to float it from, and this is
+  // the only hook that carries the dead enemy itself — weapon's onKill gets the
+  // points but not the position. Reported before the mesh is garbage.
+  hud.scorePopup(enemy.kind.scoreValue, enemy.mesh.position);
+};
 
 const weapon = new Weapon(
   camera,
@@ -103,9 +119,14 @@ input.onLockChange = (locked) => {
 };
 
 function restart() {
+  // enemies.clear() first: it sweeps the field (including a live boss) without
+  // reporting defeats, so rounds.reset() lands on an empty arena with no kills
+  // credited for the wipe.
   enemies.clear();
   effects.clear();
+  hud.clearPopups();
   player.reset();
+  rounds.reset();
   score = 0;
   gameOver = false;
 }
@@ -134,16 +155,24 @@ function frame() {
     player.update(dt);
     enemies.update(dt);
     weapon.update(dt, input.firing);
+    // After weapon.update, so a kill scored this frame advances the round this
+    // frame rather than next. Only called while running, which is what keeps the
+    // inter-round timers paused with the game.
+    rounds.update(dt);
     // After weapon.update so a shot fired this frame renders its tracer
-    // immediately rather than a frame late.
+    // immediately rather than a frame late. Same for the score popups: a popup
+    // spawned by a kill this frame has to be placed before it's shown, or it
+    // paints once in the top-left corner.
     effects.update(dt);
+    hud.updatePopups(dt);
 
     if (player.isDead()) endGame();
   }
 
-  // Outside the running check, like the HUD: both stay drawn while paused
+  // Outside the running check, like the HUD: these stay drawn while paused
   // instead of going blank behind the overlay.
-  hud.update(player.health, score);
+  hud.update(player.health, score, rounds.label, rounds.progress);
+  hud.updateBoss(enemies.boss);
   minimap.draw(player, enemies.enemies);
 
   renderer.render(scene, camera);
@@ -159,7 +188,9 @@ if (import.meta.env.DEV) {
     weapon,
     effects,
     sound,
+    hud,
     minimap,
+    rounds,
     input,
     // Live-tweakable: the config objects are read at use time, so changing a
     // value here takes effect on the next frame. Handy for balancing by hand.

@@ -22,7 +22,19 @@
       <div id="readout">
         <span id="health">HP --</span>
         <span id="score">SCORE --</span>
+        <span id="round">ROUND --</span>
+        <span id="progress">KILLS --</span>
       </div>
+      <!-- Round and boss announcements. hud.js sets the text and retriggers the
+           CSS animation. -->
+      <div id="announce"></div>
+      <!-- Boss health bar. hud.js projects the boss's world position to screen
+           space and writes left/top every frame, so it tracks its head. -->
+      <div id="bossbar" class="hidden"><div id="bossbar-fill"></div></div>
+      <!-- Container for the floating "+100" score popups. Deliberately empty:
+           hud.js fills it with a pool of POPUP.pool divs and anchors each to the
+           world position of a kill. -->
+      <div id="popups"></div>
       <!-- Rotating top-down radar. Sized and drawn by src/minimap.js; the
            circular mask and rim are CSS. -->
       <canvas id="minimap"></canvas>

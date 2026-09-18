@@ -82,6 +82,92 @@ body {
   text-shadow: 0 1px 2px #000;
 }
 
+/* Kill progress toward the boss. hud.js hides it for the boss fight itself,
+   which collapses the flex gap too — hence display rather than visibility. */
+#progress.hidden {
+  display: none;
+}
+
+/* Round / boss announcements. Sits above the crosshair rather than over it so a
+   flash never hides what you're aiming at. The 1.2s duration is what
+   ROUNDS.bossDelay and roundDelay are tuned against — keep them longer than
+   this, or the boss arrives mid-sentence. */
+#announce {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 24%;
+  text-align: center;
+  font-size: 46px;
+  letter-spacing: 0.24em;
+  color: #f2e3cd;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.95);
+  opacity: 0;
+}
+
+#announce.flash {
+  animation: announce 1.2s ease-out;
+}
+
+@keyframes announce {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  15% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.05);
+  }
+}
+
+/* Boss health bar. left/top are written by hud.js as the bar's *center*, hence
+   the translate — it's tracking a world object, so both change every frame. */
+#bossbar {
+  position: absolute;
+  width: 132px;
+  height: 7px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(240, 240, 240, 0.5);
+  background: rgba(0, 0, 0, 0.55);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.7);
+}
+
+#bossbar.hidden {
+  display: none;
+}
+
+#bossbar-fill {
+  height: 100%;
+  width: 100%;
+  background: #e0483a;
+}
+
+/* Score popups. Only the look lives here — hud.js creates the pool and writes
+   left/top/opacity every frame, since each one tracks a world point. Centered on
+   the kill by the translate, like #bossbar. Green reads as a reward against an
+   arena of reds and greys, and it's the one color nothing else in the HUD uses. */
+#popups .popup {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 20px;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  color: #5fe27a;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+
+#popups .popup.hidden {
+  display: none;
+}
+
 /* Width/height are set by minimap.js from MINIMAP.size — only the framing lives
    here. border-radius does the circular mask; the canvas clips to it too, so a
    dot at the rim can't leak into the corners. */

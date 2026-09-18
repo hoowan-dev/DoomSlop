@@ -1,11 +1,17 @@
 import * as THREE from 'three';
-import { ENEMY, PLAYER, WORLD } from './config.js';
+import { BOSS, ENEMY, PLAYER, WORLD } from './config.js';
 
-// Spawns and drives the floaters. One shared geometry/material for all of them —
-// with graphics this minimal there's no reason for per-enemy assets.
+// Spawns and drives the floaters and the round boss. One shared geometry/material
+// per kind — with graphics this minimal there's no reason for per-enemy assets.
 
 const GEOMETRY = new THREE.IcosahedronGeometry(ENEMY.radius, 0);
 const MATERIAL = new THREE.MeshLambertMaterial({ color: 0xc8503c, flatShading: true });
+
+// The boss gets its own pair rather than a scaled-up floater: at radius 3 the
+// floater's 20 facets read as a handful of flat slabs, and a different hue is
+// what makes it legible as a different tier of thing.
+const BOSS_GEOMETRY = new THREE.IcosahedronGeometry(BOSS.radius, 1);
+const BOSS_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x9b30c4, flatShading: true });
 
 // Scratch vector for steering, reused across every enemy every frame.
 const STEER = new THREE.Vector3();
@@ -15,11 +21,26 @@ export class EnemyManager {
     this.scene = scene;
     this.player = player;
 
-    /** @type {{mesh: THREE.Mesh, health: number}[]} */
+    /**
+     * `kind` is the config block the enemy was spawned from (ENEMY or BOSS), so
+     * per-enemy tunables are read from it rather than copied out field by field.
+     * @type {{mesh: THREE.Mesh, kind: object, isBoss: boolean, health: number, cooldown: number}[]}
+     */
     this.enemies = [];
+
+    /** The live boss, or null. hud.js reads it to place the health bar. */
+    this.boss = null;
+
+    // Set by main.js: (enemy) => void, fired when an enemy is *shot* dead. This
+    // is how rounds.js counts progress. It deliberately does not fire when an
+    // enemy is removed for reaching the player — see damage().
+    this.onDefeat = null;
 
     // Seconds since the round started; drives the difficulty ramp.
     this.elapsed = 0;
+
+    // rounds.js switches this off for the boss fight.
+    this.spawning = true;
 
     this.spawnTimer = 0;
     this.reset();
@@ -33,21 +54,33 @@ export class EnemyManager {
     this.spawnTimer = ENEMY.spawnInterval;
   }
 
+  /**
+   * Toggled by rounds.js so the boss fights alone. Re-enabling restarts the
+   * countdown, so a round resumes with a beat instead of a floater appearing on
+   * the same frame spawning came back.
+   */
+  setSpawning(on) {
+    this.spawning = on;
+    if (on) this.spawnTimer = this.currentSpawnInterval();
+  }
+
   update(dt) {
     this.elapsed += dt;
 
-    this.spawnTimer -= dt;
-    if (this.spawnTimer <= 0) {
-      this.spawn();
-      this.spawnTimer = this.currentSpawnInterval();
+    if (this.spawning) {
+      this.spawnTimer -= dt;
+      if (this.spawnTimer <= 0) {
+        this.spawn();
+        this.spawnTimer = this.currentSpawnInterval();
+      }
     }
-
-    const contactRange = ENEMY.radius + PLAYER.radius;
 
     // Backwards: removing on contact splices the array mid-iteration.
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
-      const mesh = enemy.mesh;
+      const { mesh, kind } = enemy;
+
+      if (enemy.cooldown > 0) enemy.cooldown -= dt;
 
       // Steer on the XZ plane only — they hover at a fixed height rather than
       // diving at the camera, which keeps them readable against the floor.
@@ -58,19 +91,30 @@ export class EnemyManager {
       );
 
       const distance = STEER.length();
+      const touching = distance <= kind.radius + PLAYER.radius;
 
-      if (distance <= contactRange) {
-        this.player.takeDamage(ENEMY.touchDamage);
+      if (touching && !enemy.isBoss) {
+        this.player.takeDamage(kind.touchDamage);
         this.remove(enemy);
         continue;
       }
 
-      // distance > contactRange > 0, so normalize is safe here.
-      mesh.position.addScaledVector(STEER.divideScalar(distance), ENEMY.speed * dt);
+      if (touching) {
+        // The boss is not consumed on contact — it has to be shot down, or the
+        // player could beat a 50-shot enemy by walking into it. So it sits on
+        // the player and hits on a cooldown instead.
+        if (enemy.cooldown <= 0) {
+          this.player.takeDamage(kind.touchDamage);
+          enemy.cooldown = kind.attackInterval;
+        }
+      } else {
+        // distance > contact range > 0, so normalize is safe here.
+        mesh.position.addScaledVector(STEER.divideScalar(distance), kind.speed * dt);
+      }
 
       // Slow tumble. Purely cosmetic, but it makes them read as alive.
-      mesh.rotation.x += dt * 0.8;
-      mesh.rotation.y += dt * 1.1;
+      mesh.rotation.x += dt * 0.8 * kind.spin;
+      mesh.rotation.y += dt * 1.1 * kind.spin;
 
       // Raycasting reads matrixWorld, and three only refreshes it during
       // render() — which happens after weapon.update() in the same frame. Push
@@ -86,9 +130,22 @@ export class EnemyManager {
   }
 
   spawn() {
-    const mesh = new THREE.Mesh(GEOMETRY, MATERIAL);
-    const { x, z } = this._spawnPoint();
-    mesh.position.set(x, ENEMY.hoverHeight, z);
+    return this._add(ENEMY, false);
+  }
+
+  /** Called by rounds.js once the BOSS ROUND announcement has landed. */
+  spawnBoss() {
+    this.boss = this._add(BOSS, true);
+    return this.boss;
+  }
+
+  _add(kind, isBoss) {
+    const mesh = new THREE.Mesh(
+      isBoss ? BOSS_GEOMETRY : GEOMETRY,
+      isBoss ? BOSS_MATERIAL : MATERIAL
+    );
+    const { x, z } = this._spawnPoint(kind.spawnDistance, kind.radius);
+    mesh.position.set(x, kind.hoverHeight, z);
 
     // Without this the mesh carries an identity matrixWorld until the next
     // render, and a raycast would treat it as sitting at the world origin —
@@ -97,22 +154,22 @@ export class EnemyManager {
 
     this.scene.add(mesh);
 
-    const enemy = { mesh, health: ENEMY.health };
+    const enemy = { mesh, kind, isBoss, health: kind.health, cooldown: 0 };
     this.enemies.push(enemy);
     return enemy;
   }
 
   /**
-   * A point exactly ENEMY.spawnDistance from the player, on a random bearing,
-   * inside the arena. Rejects out-of-bounds bearings rather than clamping them:
-   * clamping would drag the point toward the player and can land it inside
-   * contact range when the player is in a corner — an instant free hit.
+   * A point exactly `distance` from the player, on a random bearing, inside the
+   * arena. Rejects out-of-bounds bearings rather than clamping them: clamping
+   * would drag the point toward the player and can land it inside contact range
+   * when the player is in a corner — an instant free hit.
    */
-  _spawnPoint() {
-    const limit = WORLD.arenaSize / 2 - ENEMY.radius;
+  _spawnPoint(distance, radius) {
+    const limit = WORLD.arenaSize / 2 - radius;
     const px = this.player.position.x;
     const pz = this.player.position.z;
-    const d = ENEMY.spawnDistance;
+    const d = distance;
 
     for (let attempt = 0; attempt < 12; attempt++) {
       const angle = Math.random() * Math.PI * 2;
@@ -121,8 +178,9 @@ export class EnemyManager {
       if (Math.abs(x) <= limit && Math.abs(z) <= limit) return { x, z };
     }
 
-    // Fallback: aim back toward the arena center. Since spawnDistance is
-    // smaller than the arena's half-width, this point is always in bounds.
+    // Fallback: aim back toward the arena center. Always in bounds, provided
+    // `distance` stays below the arena's half-width less `radius` — which is why
+    // BOSS.spawnDistance carries that note in config.js.
     const toCenter = Math.atan2(-pz, -px);
     return {
       x: px + Math.cos(toCenter) * d,
@@ -144,7 +202,14 @@ export class EnemyManager {
     if (enemy.health > 0) return 0;
 
     this.remove(enemy);
-    return ENEMY.scoreValue;
+
+    // Only a shot kill counts as a defeat. remove() on contact, and removeAll()
+    // between rounds, deliberately stay silent — otherwise floaters suiciding
+    // into the player would advance the round, and a restart would credit a kill
+    // for every enemy it swept off the field.
+    this.onDefeat?.(enemy);
+
+    return enemy.kind.scoreValue;
   }
 
   remove(enemy) {
@@ -152,10 +217,17 @@ export class EnemyManager {
     if (i === -1) return;
     this.enemies.splice(i, 1);
     this.scene.remove(enemy.mesh);
+    if (enemy === this.boss) this.boss = null;
   }
 
-  clear() {
+  /** Wipe the field and leave the round and ramp state alone. */
+  removeAll() {
     for (const enemy of [...this.enemies]) this.remove(enemy);
+  }
+
+  /** Wipe the field *and* go back to round-one spawning. For restarts. */
+  clear() {
+    this.removeAll();
     this.reset();
   }
 }

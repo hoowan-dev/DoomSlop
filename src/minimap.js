@@ -104,7 +104,6 @@ export class Minimap {
     // canvas-up, so a point plotted at its raw world offset lands where it
     // should relative to where the player is looking.
     ctx.rotate(player.yaw);
-    ctx.fillStyle = MINIMAP.enemyColor;
 
     for (const enemy of enemies) {
       // World XZ -> map XY: +X is right, +Z is down. Height is ignored; they all
@@ -116,8 +115,18 @@ export class Minimap {
       // enemies cost nothing to draw.
       if (dx * dx + dz * dz > rangeSq) continue;
 
+      // The boss is 5x a floater's world radius — an identical dot would
+      // misrepresent it. Colors are set per-dot rather than once outside the
+      // loop for the same reason.
       ctx.beginPath();
-      ctx.arc(dx * scale, dz * scale, MINIMAP.enemyRadius, 0, Math.PI * 2);
+      ctx.arc(
+        dx * scale,
+        dz * scale,
+        enemy.isBoss ? MINIMAP.bossRadius : MINIMAP.enemyRadius,
+        0,
+        Math.PI * 2
+      );
+      ctx.fillStyle = enemy.isBoss ? MINIMAP.bossColor : MINIMAP.enemyColor;
       ctx.fill();
     }
 
