@@ -15,6 +15,17 @@ npm run preview  # serve the built bundle
 
 The `dist/` JS bundle is ~540 kB (135 kB gzipped), nearly all of it three.js. Vite warns about the chunk size; for a single-screen game there's nothing worth code-splitting, so the warning is expected.
 
+## Deploying
+
+Live at [hoowan-dev.github.io/DoomSlop](https://hoowan-dev.github.io/DoomSlop/), published by [.github/workflows/deploy.yml](.github/workflows/deploy.yml) on every push to `main`.
+
+Two things make that work, and the site breaks without either:
+
+- **`dist/` is gitignored, so Pages has to be set to "GitHub Actions" as its source**, not "Deploy from a branch". A branch deploy publishes `index.html` and `src/` untransformed, and `import * as THREE from 'three'` is a bare specifier no browser can resolve — you get the static HUD markup on a black page and a module error in the console.
+- **[vite.config.js](vite.config.js) sets `base: './'`**, because Pages serves the project from a `/DoomSlop/` subpath rather than a domain root. Vite's default `/` emits `/assets/index-xxx.js`, which resolves above the project and 404s.
+
+Neither failure is visible locally: `npm run dev` and `npm run preview` both serve from the root, where a base of `/` works fine. To actually test it, serve `dist/` behind a path prefix — that's what the `doomslop-pages.mjs` driver does.
+
 ## Layout
 
 | File | Responsibility |

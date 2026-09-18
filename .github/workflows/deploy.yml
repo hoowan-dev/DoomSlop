@@ -1,0 +1,49 @@
+# Builds the Vite bundle and publishes it to GitHub Pages.
+#
+# The repo deliberately gitignores dist/, so the thing Pages needs doesn't exist
+# in any branch — this workflow produces it on every push instead. That's why
+# Pages must be set to "GitHub Actions" as its source rather than "Deploy from a
+# branch": a branch deploy would publish the untransformed src/, where the bare
+# `import 'three'` specifier can't resolve in a browser.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # So a deploy can be re-run from the Actions tab without an empty commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write # what deploy-pages authenticates the upload with
+
+# A newer push should cancel an in-flight deploy rather than queue behind it.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
