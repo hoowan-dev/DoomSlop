@@ -34,9 +34,9 @@ const effects = new Effects(scene);
 const sound = new Sound();
 
 // The round loop. It drives enemies (wiping the field, gating spawns, summoning
-// the boss) and reports its announcements back out, so it needs the manager but
-// nothing needs it.
-const rounds = new Rounds(enemies, (text) => hud.announce(text));
+// the boss) and the player (refilling health after a boss), and reports its
+// announcements back out — so it needs them, but nothing needs it.
+const rounds = new Rounds(enemies, player, (text) => hud.announce(text));
 
 // Damage originates in enemies.js, which never sees main.js — the hook is how
 // feedback for a hit gets attached without enemies or player knowing about sound.

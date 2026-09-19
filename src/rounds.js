@@ -18,11 +18,16 @@ import { ROUNDS } from './config.js';
 
 export class Rounds {
   /**
+   * @param player needed only to refill health when a boss dies. Passed in
+   *        directly rather than routed through a callback, matching
+   *        EnemyManager — it already holds the player and calls takeDamage(),
+   *        so a gameplay system moving health is the established shape here.
    * @param onAnnounce (text) => void — main.js routes this to hud.announce().
    *        Rounds has no DOM access, matching every other system here.
    */
-  constructor(enemies, onAnnounce) {
+  constructor(enemies, player, onAnnounce) {
     this.enemies = enemies;
+    this.player = player;
     this.onAnnounce = onAnnounce;
     this.reset();
   }
@@ -103,6 +108,12 @@ export class Rounds {
         if (!this.bossDown) return;
         this.round++;
         this.kills = 0;
+        // Killing the boss pays for a full heal. Without it damage accumulates
+        // across rounds with no way to get it back, so a long run ends to
+        // attrition from whatever floater happens to be next rather than to any
+        // fight worth losing to. Here and not in reset(): a restart goes through
+        // player.reset(), which is already full health.
+        this.player.refillHealth();
         this._enter('breather', ROUNDS.roundDelay, `ROUND ${this.round}`);
         return;
 

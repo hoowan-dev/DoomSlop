@@ -99,6 +99,16 @@ export class Player {
     return this.health <= 0;
   }
 
+  /**
+   * Back to full. Called by rounds.js when a boss goes down — surviving the boss
+   * is what pays for it. Deliberately all-or-nothing rather than a heal(amount)
+   * inverse of takeDamage: nothing in the game restores a partial amount, and a
+   * generic healer would invite one.
+   */
+  refillHealth() {
+    this.health = PLAYER.maxHealth;
+  }
+
   reset() {
     this.health = PLAYER.maxHealth;
     this.position.set(0, PLAYER.eyeHeight, 0);
