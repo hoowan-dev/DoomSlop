@@ -33,7 +33,7 @@ export const ENEMY = {
 // it has to exist in the other. `attackInterval` is the exception: only the boss
 // survives contact, so only the boss needs a rate limit on its hits.
 export const BOSS = {
-  speed: 1.3, // slower than a floater; the player can always outrun it
+  speed: 1.3, // slower than a floater, and outrunnable until ROUNDS.speedStep carries it past PLAYER.moveSpeed (round 10 as shipped)
   radius: 3,
   health: 50, // shots to kill
   touchDamage: 20,
@@ -53,17 +53,29 @@ export const BOSS = {
 // The core loop: clear killsPerRound floaters, fight the boss, next round. See
 // rounds.js, which owns the state machine.
 export const ROUNDS = {
-  killsPerRound: 30, // shot kills that summon the boss; contact deaths don't count
+  killsPerRound: 25, // shot kills that summon the boss; contact deaths don't count
   // Dead air around the announcements, in seconds. Both are a little longer than
   // the 1.2s flash animation in style.css, so the text has landed before the boss
   // walks in / the floaters come back. They're also the only breather the player
   // gets in the whole game, so don't trim them much.
   bossDelay: 1.5, // BOSS ROUND flash -> boss appears
   roundDelay: 1.5, // boss dies -> floaters resume
+  // Per-round difficulty step, *added* rather than compounded: round N moves at
+  // 1 + speedStep * (N - 1), so the ladder is 1.00x, 1.50x, 2.00x, 2.50x. Named a
+  // step rather than a growth rate because 0.5 here is half of round 1's speed
+  // added every round, not 50% of the previous round's.
+  //
+  // It drives floater speed, boss speed, and the floater *spawn rate* (the
+  // interval divides by it), so one number covers both how fast they come and how
+  // many. The only thing that scales with the round — killsPerRound and boss
+  // health deliberately don't. Note there's no ceiling: at 0.5 floaters pass
+  // PLAYER.moveSpeed in round 6 and the boss in round 10, after which neither can
+  // be outrun.
+  speedStep: 0.5,
 };
 
 export const WEAPON = {
-  fireInterval: 0.18, // seconds between shots
+  fireInterval: 0.2, // seconds between shots
   range: 100,
 
   // Where the tracer starts, in normalized screen coordinates: (0, 0) is the

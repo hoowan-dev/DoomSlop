@@ -42,6 +42,12 @@ export class EnemyManager {
     // rounds.js switches this off for the boss fight.
     this.spawning = true;
 
+    // Multiplier on every enemy's speed, pushed in by rounds.js. Owned there
+    // because the round number is what drives it and this module has no idea
+    // what round it is. Deliberately not touched by reset(): rounds.reset() is
+    // the single writer, and it runs right after clear() on a restart.
+    this.speedScale = 1;
+
     this.spawnTimer = 0;
     this.reset();
   }
@@ -62,6 +68,18 @@ export class EnemyManager {
   setSpawning(on) {
     this.spawning = on;
     if (on) this.spawnTimer = this.currentSpawnInterval();
+  }
+
+  /**
+   * Called by rounds.js at the start of each round. It applies to the boss too:
+   * both tiers read `kind.speed`, so there's one multiplier rather than one per
+   * kind — a per-kind growth rate would be a config change, not a second field.
+   *
+   * It also drives the spawn rate (see currentSpawnInterval), so push it *before*
+   * setSpawning(true) — that's what re-derives the pending timer.
+   */
+  setSpeedScale(scale) {
+    this.speedScale = scale;
   }
 
   update(dt) {
@@ -109,7 +127,8 @@ export class EnemyManager {
         }
       } else {
         // distance > contact range > 0, so normalize is safe here.
-        mesh.position.addScaledVector(STEER.divideScalar(distance), kind.speed * dt);
+        const speed = kind.speed * this.speedScale;
+        mesh.position.addScaledVector(STEER.divideScalar(distance), speed * dt);
       }
 
       // Slow tumble. Purely cosmetic, but it makes them read as alive.
@@ -123,10 +142,19 @@ export class EnemyManager {
     }
   }
 
-  /** Spawn interval, ramping down as the round goes on. */
+  /**
+   * Spawn interval: ramping down as the round goes on, then compressed by the
+   * round's speed multiplier.
+   *
+   * Rate scales with speed, so the interval *divides* by the multiplier — which
+   * scales both ends of the ramp together. Scaling only `spawnInterval` would
+   * flatten the ramp against a fixed `spawnIntervalMin` and the later rounds
+   * would all converge on the same pressure.
+   */
   currentSpawnInterval() {
     const ramp = 1 - Math.min(this.elapsed / ENEMY.rampDuration, 1);
-    return ENEMY.spawnIntervalMin + (ENEMY.spawnInterval - ENEMY.spawnIntervalMin) * ramp;
+    const interval = ENEMY.spawnIntervalMin + (ENEMY.spawnInterval - ENEMY.spawnIntervalMin) * ramp;
+    return interval / this.speedScale;
   }
 
   spawn() {

@@ -98,8 +98,6 @@ body {
   right: 0;
   top: 24%;
   text-align: center;
-  font-size: 46px;
-  letter-spacing: 0.24em;
   color: #f2e3cd;
   text-shadow: 0 2px 16px rgba(0, 0, 0, 0.95);
   opacity: 0;
@@ -107,6 +105,21 @@ body {
 
 #announce.flash {
   animation: announce 1.2s ease-out;
+}
+
+#announce-title {
+  font-size: 46px;
+  letter-spacing: 0.24em;
+}
+
+/* The enemy speed under the round. Smaller and dimmer so the round number still
+   reads first, and laid out in normal flow under the title rather than pinned to
+   its own offset — the title's size is free to change without moving this. */
+#announce-speed {
+  margin-top: 10px;
+  font-size: 19px;
+  letter-spacing: 0.2em;
+  color: #e0b060;
 }
 
 @keyframes announce {

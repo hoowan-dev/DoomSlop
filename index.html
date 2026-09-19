@@ -26,8 +26,13 @@
         <span id="progress">KILLS --</span>
       </div>
       <!-- Round and boss announcements. hud.js sets the text and retriggers the
-           CSS animation. -->
-      <div id="announce"></div>
+           CSS animation. The flash lives on the wrapper so the round line and the
+           enemy-speed line under it fade as one thing; the second line is empty
+           for announcements that don't have one (BOSS ROUND). -->
+      <div id="announce">
+        <div id="announce-title"></div>
+        <div id="announce-speed"></div>
+      </div>
       <!-- Boss health bar. hud.js projects the boss's world position to screen
            space and writes left/top every frame, so it tracks its head. -->
       <div id="bossbar" class="hidden"><div id="bossbar-fill"></div></div>

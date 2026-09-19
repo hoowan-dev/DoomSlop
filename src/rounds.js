@@ -22,8 +22,9 @@ export class Rounds {
    *        directly rather than routed through a callback, matching
    *        EnemyManager — it already holds the player and calls takeDamage(),
    *        so a gameplay system moving health is the established shape here.
-   * @param onAnnounce (text) => void — main.js routes this to hud.announce().
-   *        Rounds has no DOM access, matching every other system here.
+   * @param onAnnounce (text, sub) => void — main.js routes this to
+   *        hud.announce(). Rounds has no DOM access, matching every other
+   *        system here.
    */
   constructor(enemies, player, onAnnounce) {
     this.enemies = enemies;
@@ -36,10 +37,40 @@ export class Rounds {
     this.round = 1;
     this.kills = 0;
     this.bossDown = false;
-    this.phase = 'fighting';
-    this.timer = 0;
+    // Speed first: setSpawning() derives the pending spawn timer from the current
+    // multiplier, so re-enabling spawning before pushing round 1's scale would
+    // open a retry with the dead run's compressed interval.
+    this._startRound('fighting', 0);
     this.enemies.setSpawning(true);
-    this._pending = `ROUND ${this.round}`;
+  }
+
+  /**
+   * Begin a round: push its speed to the enemies and queue its flash. Both entry
+   * points go through here — a restart from reset(), and the boss dying — so they
+   * can't drift. A retry that reads round 1 while the floaters keep round 7's
+   * speed is the bug this exists to prevent.
+   */
+  _startRound(phase, duration) {
+    this.enemies.setSpeedScale(this.speedScale);
+    this._enter(phase, duration, `ROUND ${this.round}`, this.speedLabel);
+  }
+
+  /**
+   * Speed multiplier for the current round: 1 in round 1, then a flat
+   * ROUNDS.speedStep more each round — 1.0, 1.5, 2.0 at the shipped 0.5. A step
+   * added to the base rather than a rate compounded on the previous round, so the
+   * ladder stays readable at a glance instead of drifting into 2.31x.
+   *
+   * Derived from the round number rather than accumulated in a field, so it can't
+   * drift out of step with it.
+   */
+  get speedScale() {
+    return 1 + ROUNDS.speedStep * (this.round - 1);
+  }
+
+  /** Second line of the round flash, e.g. `ENEMY SPEED: 1.32x`. */
+  get speedLabel() {
+    return `ENEMY SPEED: ${this.speedScale.toFixed(2)}x`;
   }
 
   /** True from the BOSS ROUND flash until the boss is dead. */
@@ -81,7 +112,7 @@ export class Rounds {
     // Announcements are queued rather than fired at the transition, so reset()
     // can safely request one while the game is still paused.
     if (this._pending) {
-      this.onAnnounce?.(this._pending);
+      this.onAnnounce?.(this._pending.text, this._pending.sub);
       this._pending = null;
     }
 
@@ -114,7 +145,7 @@ export class Rounds {
         // fight worth losing to. Here and not in reset(): a restart goes through
         // player.reset(), which is already full health.
         this.player.refillHealth();
-        this._enter('breather', ROUNDS.roundDelay, `ROUND ${this.round}`);
+        this._startRound('breather', ROUNDS.roundDelay);
         return;
 
       case 'breather':
@@ -125,9 +156,14 @@ export class Rounds {
     }
   }
 
-  _enter(phase, duration, announcement) {
+  /**
+   * @param sub optional second line for the flash. Kept out of `announcement`
+   *        rather than newline-joined, so the HUD can style the two lines
+   *        differently and BOSS ROUND can stay a single line.
+   */
+  _enter(phase, duration, announcement, sub = null) {
     this.phase = phase;
     this.timer = duration;
-    this._pending = announcement;
+    this._pending = { text: announcement, sub };
   }
 }

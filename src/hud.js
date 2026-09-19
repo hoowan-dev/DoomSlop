@@ -25,6 +25,8 @@ export class Hud {
     this.crosshairEl = document.getElementById('crosshair');
     this.flashEl = document.getElementById('muzzle');
     this.announceEl = document.getElementById('announce');
+    this.announceTitleEl = document.getElementById('announce-title');
+    this.announceSpeedEl = document.getElementById('announce-speed');
     this.bossBarEl = document.getElementById('bossbar');
     this.bossFillEl = document.getElementById('bossbar-fill');
 
@@ -61,9 +63,16 @@ export class Hud {
     }
   }
 
-  /** Big centered text: ROUND 1, BOSS ROUND, ROUND 2. */
-  announce(text) {
-    this.announceEl.textContent = text;
+  /**
+   * Big centered text: ROUND 1, BOSS ROUND, ROUND 2.
+   *
+   * @param sub optional second line under it, currently the round's enemy speed.
+   *        Both already formatted by rounds.js. Emptied rather than hidden when
+   *        absent — the line is in normal flow, so an empty one collapses.
+   */
+  announce(text, sub = null) {
+    this.announceTitleEl.textContent = text;
+    this.announceSpeedEl.textContent = sub ?? '';
 
     // Same retrigger dance as the muzzle flash below — without the reflow, a
     // second announcement inside the animation window wouldn't replay it.
