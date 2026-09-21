@@ -25,14 +25,14 @@
         <span id="round">ROUND --</span>
         <span id="progress">KILLS --</span>
       </div>
-      <!-- In-play controls reference, top left. Static text like #build — no JS
-           reads or writes it. The overlay carries its own shorter summary of the
-           same four movement keys, which is the pre-game pitch (and readable
-           there, where this panel is dimmed behind the overlay); this one is the
-           full list and the only place the ~ cheat is advertised. Keep them in
-           step by hand if a real control is ever added. -->
+      <!-- Controls reference, top left. Static text like #build — no JS reads or
+           writes it, and it's the only list of the controls anywhere: the overlay
+           used to repeat the movement keys, which meant two copies to keep in
+           step. Visible during play and dimmed behind the pause overlay, so it
+           covers the start screen too. -->
       <div id="controls">
         <span class="key">WASD</span><span>MOVE</span>
+        <span class="key">SPACE</span><span>JUMP</span>
         <span class="key">MOUSE</span><span>LOOK</span>
         <span class="key">CLICK</span><span>SHOOT</span>
         <span class="key">ESC</span><span>PAUSE</span>
@@ -63,14 +63,17 @@
            through config.js and hud.js. Bump it by hand; this is the only place
            it appears. Kept out of package.json's `version` too, which is a semver
            for the package, not a build number for the game. -->
-      <div id="build">BUILD 1.01</div>
+      <div id="build">BUILD 1.02</div>
     </div>
 
-    <!-- Click-to-start / paused overlay. Shown whenever the pointer is unlocked. -->
+    <!-- Click-to-start / paused overlay. Shown whenever the pointer is unlocked.
+         Keep it to one <p>: hud.showOverlay() writes the subtitle through
+         querySelector('p'), which silently takes the first one. The controls used
+         to be a second paragraph here; they live in #controls now, which is on
+         screen during play and behind this overlay, so there's one list. -->
     <div id="overlay">
       <h1>DOOMSLOP</h1>
       <p>Click to play</p>
-      <p class="keys">WASD move &middot; mouse look &middot; click shoot &middot; Esc pause</p>
     </div>
 
     <script type="module" src="/src/main.js"></script>

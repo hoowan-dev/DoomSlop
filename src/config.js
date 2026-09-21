@@ -7,11 +7,24 @@ export const WORLD = {
 };
 
 export const PLAYER = {
-  eyeHeight: 1.7,
+  eyeHeight: 1.7, // also the resting camera height, i.e. the ground for a jump
   moveSpeed: 7, // units per second
   lookSensitivity: 0.0022, // radians per pixel of mouse movement
   maxHealth: 100,
   radius: 0.4, // for wall collision
+
+  // The jump, and the only vertical motion in the game. These two fully determine
+  // it: the hop peaks at jumpSpeed^2 / (2 * gravity) — 1.06 units here — and lasts
+  // 2 * jumpSpeed / gravity, or 0.65s. Raising jumpSpeed alone makes it both
+  // higher and slower; raising gravity with it keeps it snappy.
+  //
+  // Two things to respect when retuning. `eyeHeight` plus that apex has to stay
+  // under WORLD.wallHeight, or a jump lets the player see out over the arena. And
+  // jumping is deliberately *not* a dodge — contact damage is measured on the XZ
+  // plane (see enemies.js), so height buys nothing defensively no matter how high
+  // this goes.
+  jumpSpeed: 6.5, // initial upward velocity, units/sec
+  gravity: 20, // units/sec^2
 };
 
 // Hardware-level input conditioning. Separate from PLAYER.lookSensitivity on
@@ -37,7 +50,21 @@ export const ENEMY = {
   spawnIntervalMin: 0.45, // floor the interval ramps down to
   rampDuration: 90, // seconds to go from spawnInterval to spawnIntervalMin
   spawnDistance: 25, // how far from the player they appear
+  // Where they *settle*, not where they appear: an enemy spawns somewhere in the
+  // band below and levels out to this as it closes, so this is the height it
+  // fights at.
   hoverHeight: 1.6,
+  // The band they spawn in, so a wave arrives at mixed heights instead of all on
+  // one plane — some dropping in from overhead, some skimming the floor. Both ends
+  // have to clear the geometry: under `radius` the orb sinks into the floor, and
+  // over WORLD.wallHeight - radius it pokes out above the walls.
+  //
+  // They converge on hoverHeight before they arrive, which is what keeps the
+  // XZ-planar contact check honest — something still 6 units overhead landing a
+  // hit would read as damage out of nowhere. Charging a fresh high spawn is the
+  // one way to meet one before it has come down, and that's the player's doing.
+  spawnHeightMin: 0.9,
+  spawnHeightMax: 6,
   spin: 1, // multiplier on the cosmetic tumble rate
   scoreValue: 100,
 };
@@ -46,6 +73,11 @@ export const ENEMY = {
 // the two blocks an enemy was spawned from — add a per-enemy tunable to one and
 // it has to exist in the other. `attackInterval` is the exception: only the boss
 // survives contact, so only the boss needs a rate limit on its hits.
+//
+// Pulled out of the block because three fields have to be the same number — see
+// spawnHeightMin below, where being equal to the hover height is the point.
+const BOSS_HOVER = 3.4;
+
 export const BOSS = {
   speed: 1.3, // slower than a floater, and outrunnable until ROUNDS.speedStep carries it past PLAYER.moveSpeed (round 10 as shipped)
   radius: 3,
@@ -58,7 +90,16 @@ export const BOSS = {
   // Must stay below arenaSize/2 - radius, or every bearing is out of bounds and
   // _spawnPoint() falls through to its center-ward fallback on every attempt.
   spawnDistance: 20,
-  hoverHeight: 3.4,
+  hoverHeight: BOSS_HOVER,
+  // The boss deliberately doesn't get the floaters' height variety: its entrance
+  // is staged — named by the flash, alone in a wiped arena — and a radius-3 orb
+  // arriving at a random altitude reads as a glitch rather than as variety. There's
+  // barely room for it anyway, between its radius and WORLD.wallHeight. Both ends
+  // equal to hoverHeight makes the settle in enemies.js a no-op for this tier.
+  // Present as real fields rather than omitted because every enemy reads its
+  // tunables off `kind`, where a missing one is an undefined that means NaN.
+  spawnHeightMin: BOSS_HOVER,
+  spawnHeightMax: BOSS_HOVER,
   spin: 0.35, // a floater's tumble rate on something this big looks frantic
   scoreValue: 5000, // 50 shots, priced at a floater's 100 apiece
   healthBarLift: 1.4, // world units above the boss's crown to float the bar

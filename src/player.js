@@ -20,6 +20,11 @@ export class Player {
     this.yaw = 0;
     this.pitch = 0;
 
+    // Vertical velocity, non-zero only during a jump. There's no horizontal
+    // counterpart: walking is positional (no acceleration or inertia), so this is
+    // the one axis that needs state carried between frames.
+    this.velocityY = 0;
+
     this.camera.rotation.order = 'YXZ';
 
     // Reused every frame so the loop doesn't allocate a Vector3 per tick.
@@ -36,6 +41,8 @@ export class Player {
   update(dt) {
     this._look();
     this._walk(dt);
+    this._jump(dt);
+    // Clamps X/Z only — the jump owns Y, and there's no ceiling to hit.
     this._clampToArena();
     this._syncCamera();
   }
@@ -76,6 +83,48 @@ export class Player {
     this.position.z += dir.z;
   }
 
+  /**
+   * Vertical motion: the jump and the fall back out of it. Walking is unaffected,
+   * so the player steers normally in mid-air.
+   */
+  _jump(dt) {
+    // A height test rather than a grounded flag. The floor is flat and at a known
+    // height, so there's no landing event to detect and no second piece of state
+    // that can fall out of step with the position.
+    const grounded = this.position.y <= PLAYER.eyeHeight;
+
+    // Order matters: consumePress() is destructive, so testing `grounded` first
+    // leaves the press queued while airborne instead of eating it. That buys jump
+    // buffering for free — a tap a few frames before landing fires on touchdown
+    // rather than being silently dropped, which is the difference between the
+    // control feeling responsive and feeling like it missed. It also means a
+    // mid-air tap can't double-jump: nothing reads the press until the player is
+    // back on the floor.
+    if (grounded && this.input.consumePress('Space')) {
+      this.velocityY = PLAYER.jumpSpeed;
+    }
+
+    // Resting on the floor. Returning early rather than integrating is what keeps
+    // gravity from accumulating an ever-larger downward velocity while standing
+    // still — harmless at the clamp below, but it would launch the player on the
+    // first frame the clamp was ever loosened.
+    if (grounded && this.velocityY <= 0) {
+      this.position.y = PLAYER.eyeHeight;
+      this.velocityY = 0;
+      return;
+    }
+
+    this.velocityY -= PLAYER.gravity * dt;
+    this.position.y += this.velocityY * dt;
+
+    // Landing. Snapped rather than left where the integration put it: the frame
+    // that crosses the floor lands some way under it, and dt decides how far.
+    if (this.position.y < PLAYER.eyeHeight) {
+      this.position.y = PLAYER.eyeHeight;
+      this.velocityY = 0;
+    }
+  }
+
   _clampToArena() {
     // Walls are at the raw bounds; inset by the player's radius so the camera
     // stops before it can see through them.
@@ -114,6 +163,9 @@ export class Player {
     this.position.set(0, PLAYER.eyeHeight, 0);
     this.yaw = 0;
     this.pitch = 0;
+    // Dying mid-jump would otherwise carry that velocity into the retry, so the
+    // new run opens still rising or still falling from the last one's hop.
+    this.velocityY = 0;
     this._syncCamera();
   }
 

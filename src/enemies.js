@@ -101,8 +101,10 @@ export class EnemyManager {
 
       if (enemy.cooldown > 0) enemy.cooldown -= dt;
 
-      // Steer on the XZ plane only — they hover at a fixed height rather than
-      // diving at the camera, which keeps them readable against the floor.
+      // Steer on the XZ plane only. Height is handled separately below, as a
+      // one-way settle toward the kind's hover height rather than as part of the
+      // pursuit — so they never dive at the camera, and contact stays planar,
+      // which is what keeps a jump from being a dodge.
       STEER.set(
         this.player.position.x - mesh.position.x,
         0,
@@ -128,8 +130,18 @@ export class EnemyManager {
         }
       } else {
         // distance > contact range > 0, so normalize is safe here.
-        const speed = kind.speed * this.speedScale;
-        mesh.position.addScaledVector(STEER.divideScalar(distance), speed * dt);
+        const step = kind.speed * this.speedScale * dt;
+        mesh.position.addScaledVector(STEER.divideScalar(distance), step);
+
+        // Level out toward the hover height, as a slope against the horizontal
+        // step rather than a rate against dt — that's what makes the settle land
+        // at the same place in the approach however fast the round is running.
+        // Clamped to what's left so it stops exactly level instead of
+        // oscillating across the target on a long frame.
+        if (enemy.levelSlope > 0) {
+          const remaining = kind.hoverHeight - mesh.position.y;
+          mesh.position.y += Math.sign(remaining) * Math.min(enemy.levelSlope * step, Math.abs(remaining));
+        }
       }
 
       // Slow tumble. Purely cosmetic, but it makes them read as alive.
@@ -180,7 +192,12 @@ export class EnemyManager {
       isBoss ? BOSS_MATERIAL : MATERIAL
     );
     const { x, z } = this._spawnPoint(kind.spawnDistance, kind.radius);
-    mesh.position.set(x, kind.hoverHeight, z);
+    // Mixed heights per spawn rather than one plane. `spawnDistance` stays the
+    // *horizontal* distance — the height is on top of it, so a high spawn is
+    // genuinely further away, and the arena bounds check in _spawnPoint() is
+    // still comparing the right two numbers.
+    const y = kind.spawnHeightMin + Math.random() * (kind.spawnHeightMax - kind.spawnHeightMin);
+    mesh.position.set(x, y, z);
 
     if (identity) mesh.add(this._portrait(kind, identity));
 
@@ -192,7 +209,20 @@ export class EnemyManager {
 
     this.scene.add(mesh);
 
-    const enemy = { mesh, kind, isBoss, identity, health: kind.health, cooldown: 0 };
+    const enemy = {
+      mesh,
+      kind,
+      isBoss,
+      identity,
+      health: kind.health,
+      cooldown: 0,
+      // Vertical units to shed per horizontal unit travelled — a slope, not a
+      // speed. Tied to ground covered rather than to time so the settle finishes
+      // on arrival at any `speedScale`: a round-8 floater crosses the arena four
+      // times faster and has to come down four times faster with it. Frozen at
+      // spawn, so it's unaffected by the player moving the goalposts.
+      levelSlope: Math.abs(y - kind.hoverHeight) / kind.spawnDistance,
+    };
     this.enemies.push(enemy);
     return enemy;
   }

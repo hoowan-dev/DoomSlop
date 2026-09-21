@@ -255,6 +255,13 @@ export class Hud {
     return true;
   }
 
+  /**
+   * The subtitle is found with querySelector('p'), which takes the *first*
+   * paragraph — so the overlay has to stay at one. It used to carry a second one
+   * listing the controls, which is why this is worth saying: that list is
+   * #controls now, and re-adding it here as a <p> above this one would silently
+   * turn the controls into the pause message.
+   */
   showOverlay(title, subtitle) {
     this.overlayEl.querySelector('h1').textContent = title;
     this.overlayEl.querySelector('p').textContent = subtitle;
