@@ -233,9 +233,10 @@ export const POPUP = {
   fadeAt: 0.45, // fraction of life left when it starts fading; holds opaque above this
 };
 
-// Every effect is a pitch-swept oscillator, most with a noise burst layered under
-// it for attack. Durations in seconds, pitches in Hz, gains 0..1 before the
-// master. See sound.js — nothing here is a file path; it's all synthesized.
+// Every *effect* is a pitch-swept oscillator, most with a noise burst layered
+// under it for attack. Durations in seconds, pitches in Hz, gains 0..1 before the
+// master. See sound.js — none of the effects is a file path; they're synthesized.
+// The music bed at the bottom is the one exception, and the only audio asset.
 export const SOUND = {
   masterVolume: 0.35, // leaves headroom for several effects at once
 
@@ -269,6 +270,28 @@ export const SOUND = {
     gain: 0.25,
     pitchLow: 440, // swept low->high to resume, high->low to pause
     pitchHigh: 880,
+  },
+
+  // The looping music bed — assets/audio/doom.mp3, the one audio file in the
+  // project, because a minute and a half of music is not something oscillators
+  // produce. Everything else in this block is still synthesized.
+  //
+  // `gain` is deliberately *not* under masterVolume: the music hangs off its own
+  // node straight to the destination (see sound.js), so this is an absolute level
+  // and has to be read against an effect's *effective* peak — masterVolume times
+  // that effect's gain, which is 0.16 for the loudest of them, `damage`. Sitting
+  // just under that is what keeps a sustained bed from burying transients that are
+  // louder on paper: a gunshot peaks for 90ms, music holds its level forever.
+  //
+  // The loop window trims a lead-in off the front and stops well before the file's
+  // 100.8s end. loopEnd has to stay inside that duration — past it the Web Audio
+  // spec quietly loops to the end of the buffer instead, so an over-long window
+  // reads as the trim not working rather than as an error. sound.js clamps it and
+  // the sound driver asserts the decoded buffer is longer than this.
+  music: {
+    gain: 0.15,
+    loopStart: 1, // 0:01 — skips the lead-in, and never plays it, not even once
+    loopEnd: 94, // 1:34
   },
 };
 

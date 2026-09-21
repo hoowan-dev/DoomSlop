@@ -1,9 +1,17 @@
 import { SOUND } from './config.js';
 
-// Synthesized sound effects — there are no audio files. Every effect is built
-// from oscillators and one shared noise buffer via the Web Audio API, which
-// keeps the project asset-free and suits a game whose visuals are flat colors
-// and no textures.
+// Music is *imported*, not fetched from a runtime path, for the same reason the
+// boss portraits are (see bosses.js): Vite rewrites the import to the emitted
+// hashed URL, which inherits the './' base from vite.config.js. A literal
+// 'assets/audio/doom.mp3' would resolve against the page URL and 404 under the
+// GitHub Pages subpath.
+import MUSIC_URL from '../assets/audio/doom.mp3';
+
+// Sound effects are synthesized — built from oscillators and one shared noise
+// buffer via the Web Audio API, which suits a game whose visuals are flat colors
+// and no textures. The music bed is the one audio file, and the one thing here
+// that isn't generated: a minute and a half of music isn't something oscillators
+// produce. Don't take that as licence to add sample files for the effects.
 //
 // Owned by main.js: it calls resume() from the click that starts the game and
 // triggers each effect. Nothing else in the codebase calls in here, and this
@@ -16,8 +24,11 @@ export class Sound {
     // and the test drivers treat console warnings as failures.
     this.ctx = null;
     this.master = null;
+    this.music = null;
+    this.musicSource = null;
     this.noise = null;
     this._initialized = false;
+    this._musicStarted = false;
   }
 
   /**
@@ -31,6 +42,9 @@ export class Sound {
       this._init();
     }
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    // After the resume, so the source isn't scheduled against a suspended clock.
+    // Idempotent — see _startMusic(); every click after the first is a no-op.
+    this._startMusic();
   }
 
   _init() {
@@ -43,6 +57,16 @@ export class Sound {
     this.master.gain.value = SOUND.masterVolume;
     this.master.connect(this.ctx.destination);
 
+    // The music gets its own node to the destination rather than going through
+    // `master`, for two reasons. masterVolume is headroom for several *effects*
+    // stacking, which a single sustained bed doesn't participate in; and the sound
+    // driver taps `master` with an AnalyserNode to measure whether each effect
+    // generates signal, which music underneath would swamp. SOUND.music.gain is
+    // therefore an absolute level, not a fraction of masterVolume.
+    this.music = this.ctx.createGain();
+    this.music.gain.value = SOUND.music.gain;
+    this.music.connect(this.ctx.destination);
+
     // One second of white noise, generated once and shared by every effect that
     // wants a percussive edge. This buffer is the expensive part of the noise
     // layer; regenerating it per shot would be pure waste.
@@ -50,6 +74,60 @@ export class Sound {
     this.noise = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
     const data = this.noise.getChannelData(0);
     for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+  }
+
+  /**
+   * Starts the looping music bed, once, and then never touches it again — there is
+   * deliberately no stop(), no restart and no seek anywhere in the codebase. That
+   * absence *is* the implementation of "keeps playing through a pause, a round
+   * change, a death and a retry": nothing in the game can reach the source, and
+   * pausing only stops main.js's frame loop, which the AudioContext's own clock
+   * doesn't depend on. Anyone adding audio teardown to a reset path should expect
+   * to break that.
+   *
+   * The loop window is a segment of the track rather than the whole file, which is
+   * why this is an AudioBufferSourceNode and not an <audio> element: loopStart /
+   * loopEnd are sample-accurate and gapless, where seeking an element from a
+   * timeupdate handler is quantized to ~250ms and audibly stutters at the seam.
+   * The cost is decoding the whole file up front, which is a few hundred ms on one
+   * click, once.
+   *
+   * The guard is set *before* the await rather than after. Two clicks in quick
+   * succession would both land while the decode is in flight, and the second source
+   * wouldn't replace the first — an AudioBufferSourceNode is single-use, so it would
+   * start a second copy of the track playing over the top of it.
+   */
+  _startMusic() {
+    if (this._musicStarted || !this.ctx) return;
+    this._musicStarted = true;
+
+    fetch(MUSIC_URL)
+      .then((res) => res.arrayBuffer())
+      .then((bytes) => this.ctx.decodeAudioData(bytes))
+      .then((buffer) => {
+        const src = this.ctx.createBufferSource();
+        src.buffer = buffer;
+        src.loop = true;
+        src.loopStart = SOUND.music.loopStart;
+        // A loopEnd past the end of the buffer is not an error — the spec treats it
+        // as the buffer's end — so an over-long window would quietly play the track
+        // out rather than fail. Clamping makes the config honest about what's
+        // playing; the sound driver asserts the number didn't need clamping.
+        src.loopEnd = Math.min(SOUND.music.loopEnd, buffer.duration);
+        src.connect(this.music);
+        // Offset to loopStart, so the trimmed lead-in never plays — not even on the
+        // first pass, which start(t) with no offset would include.
+        src.start(this.ctx.currentTime, src.loopStart);
+        this.musicSource = src;
+      })
+      .catch((err) => {
+        // Music failing must not take the effects down with it. Releasing the guard
+        // lets the next overlay click retry, and the warning is the only signal a
+        // missing or undecodable file would otherwise give — the drivers treat
+        // console warnings as failures, which is the right outcome here.
+        this._musicStarted = false;
+        console.warn('music failed to start:', err);
+      });
   }
 
   /** Dry low crack. Fires up to ~5.5 times a second, so it stays very short. */
