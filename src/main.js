@@ -42,6 +42,9 @@ const sound = new Sound();
 pickups.onCollect = () => {
   // The same all-or-nothing refill a boss kill pays out. Deliberately reused rather
   // than a partial heal: nothing in the game restores a fraction of the bar.
+  // The green vignette is deliberately *not* here: it hangs off player.onHeal
+  // below, so the refill after a boss dies flashes it too without rounds.js
+  // needing to know the HUD exists.
   player.refillHealth();
   sound.healthPickup();
   hud.notice('HP RESTORED');
@@ -53,8 +56,26 @@ pickups.onCollect = () => {
 const rounds = new Rounds(enemies, player, (text, sub) => hud.announce(text, sub));
 
 // Damage originates in enemies.js, which never sees main.js — the hook is how
-// feedback for a hit gets attached without enemies or player knowing about sound.
-player.onDamage = () => sound.playerDamaged();
+// feedback for a hit gets attached without enemies or the player knowing about the
+// sound or the HUD.
+player.onDamage = (amount, source) => {
+  sound.playerDamaged();
+  hud.vignette('damage');
+
+  // Where it came from, as an angle around the crosshair. The bearing is the
+  // player's to compute (it needs yaw and position) and the wedge is the HUD's to
+  // draw, so this is the seam between them. `source` is the attacker's live
+  // position vector and a floater is removed the instant after it hits, which is
+  // why it's read here and now rather than stored.
+  if (source) hud.hitFrom(player.bearingTo(source));
+};
+
+// The same edge-of-screen pulse, in green. On refillHealth() rather than on the two
+// things that call it, which is what makes one line cover both a medkit and the
+// refill for putting a boss down — rounds.js owns that second one and has no HUD
+// access, deliberately. Red and green are one element flashing two colors, so the
+// green can't read as anything but the opposite of the red.
+player.onHeal = () => hud.vignette('heal');
 
 // Likewise for kills: enemies.js reports a shot death, rounds.js counts it.
 // Routing it through here keeps the two from knowing about each other.
@@ -211,7 +232,9 @@ function frame() {
   // instead of going blank behind the overlay.
   hud.update(player.health, score, rounds.label, rounds.progress);
   hud.updateBoss(enemies.boss);
-  minimap.draw(player, enemies.enemies);
+  // Both raw arrays, not hitboxes() — that allocates one per call, and this runs
+  // every frame. Same two-array shape as updateGlows below, for the same reason.
+  minimap.draw(player, enemies.enemies, pickups.pickups);
   // The raw enemy array, like minimap.draw takes — hitboxes() would allocate one
   // every frame. Two arrays rather than one joined: the pools are separate, and
   // concatenating would allocate here too. After enemies.update()/pickups.update() so

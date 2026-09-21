@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { POPUP } from './config.js';
+import { HITMARK, POPUP } from './config.js';
 
 // The HUD is plain DOM on top of the canvas — cheaper and easier to style than
 // anything drawn in the scene.
@@ -28,6 +28,7 @@ export class Hud {
     this.announceTitleEl = document.getElementById('announce-title');
     this.announceSubEl = document.getElementById('announce-sub');
     this.noticeEl = document.getElementById('notice');
+    this.vignetteEl = document.getElementById('vignette');
     this.bossBarEl = document.getElementById('bossbar');
     this.bossFillEl = document.getElementById('bossbar-fill');
 
@@ -42,6 +43,7 @@ export class Hud {
     this._hitTimer = null;
 
     this._buildPopups();
+    this._buildHitMarks();
   }
 
   /**
@@ -98,6 +100,78 @@ export class Hud {
     this.noticeEl.classList.remove('flash');
     void this.noticeEl.offsetWidth;
     this.noticeEl.classList.add('flash');
+  }
+
+  /**
+   * Fixed pool of hit-direction wedges, built here rather than in index.html for
+   * the same reason the popups are: the count is a config value.
+   *
+   * Two nested divs per slot, and the nesting is what makes this work. The outer
+   * one carries the bearing as an inline `rotate()` and the inner one carries the
+   * CSS animation — which animates `transform` to kick the wedge outward, and
+   * would overwrite the rotation if they shared an element. Nested, the inner
+   * translate runs in the outer's already-rotated frame, so "outward" is radial
+   * for free at any bearing.
+   */
+  _buildHitMarks() {
+    const parent = document.getElementById('hitmarks');
+    this.hitMarks = [];
+
+    for (let i = 0; i < HITMARK.pool; i++) {
+      const el = document.createElement('div');
+      el.className = 'hitmark';
+      const wedge = document.createElement('div');
+      wedge.className = 'wedge';
+      el.appendChild(wedge);
+      parent.appendChild(el);
+      this.hitMarks.push({ el, wedge });
+    }
+
+    // Round-robin rather than the popups' free-slot search: these have no
+    // lifetime here to search on — the CSS animation is their whole duration, so
+    // the HUD never learns when one ended. With a pool several times what a
+    // simultaneous swarm can land, walking the ring can only ever clobber the
+    // oldest, which is the same rule _freePopup() falls back to anyway.
+    this._nextHitMark = 0;
+  }
+
+  /**
+   * A wedge pointing at whatever just hit the player.
+   *
+   * @param bearing radians clockwise from straight ahead, from
+   *        player.bearingTo(). CSS rotate() is clockwise for positive angles and
+   *        takes radians directly, so the angle needs no conversion — it's the
+   *        same convention the minimap draws enemy dots in.
+   */
+  hitFrom(bearing) {
+    const mark = this.hitMarks[this._nextHitMark];
+    this._nextHitMark = (this._nextHitMark + 1) % this.hitMarks.length;
+
+    mark.el.style.transform = `rotate(${bearing}rad)`;
+
+    // Same retrigger dance as every other CSS-driven flash here. On the inner
+    // element, since that's the one holding the animation.
+    mark.wedge.classList.remove('flash');
+    void mark.wedge.offsetWidth;
+    mark.wedge.classList.add('flash');
+  }
+
+  /**
+   * Full-screen tint pulsing in from the edges: red on taking a hit, green on
+   * collecting health. One element and one animation for both, with the color
+   * swapped by the class — they're the same event shape ("your health just
+   * changed, look at the bar") pointing in opposite directions, and splitting
+   * them into two overlays would let the two fades drift apart.
+   *
+   * @param kind 'damage' or 'heal'. Doubles as the CSS class, so there's no
+   *        mapping table to keep in step with the stylesheet.
+   */
+  vignette(kind) {
+    // The tint classes come off with the animation: a heal landing inside a
+    // damage flash has to replace its color, not sit on top of it.
+    this.vignetteEl.classList.remove('flash', 'damage', 'heal');
+    void this.vignetteEl.offsetWidth;
+    this.vignetteEl.classList.add(kind, 'flash');
   }
 
   /**

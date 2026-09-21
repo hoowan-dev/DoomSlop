@@ -30,10 +30,18 @@ export class Player {
     // Reused every frame so the loop doesn't allocate a Vector3 per tick.
     this._move = new THREE.Vector3();
 
-    // Set by main.js: (amount) => void, fired when the player actually loses
-    // health. Damage arrives from enemies.js, which main.js never sees, so
+    // Set by main.js: (amount, source) => void, fired when the player actually
+    // loses health. Damage arrives from enemies.js, which main.js never sees, so
     // without this hook feedback for a hit has nowhere to attach.
     this.onDamage = null;
+
+    // Set by main.js: () => void, fired by refillHealth(). The counterpart to
+    // onDamage, and it exists for the same reason: the two callers that heal —
+    // pickups.onCollect in main.js and the boss-death transition in rounds.js —
+    // have nothing in common except this method, so hanging the feedback here is
+    // what makes one flash cover both. rounds.js has no DOM access and shouldn't
+    // grow any.
+    this.onHeal = null;
 
     this._syncCamera();
   }
@@ -135,13 +143,51 @@ export class Player {
     this.position.z = Math.max(lo, Math.min(hi, this.position.z));
   }
 
-  takeDamage(amount) {
+  /**
+   * @param source world position of whatever landed the hit, forwarded to
+   *        onDamage so the HUD can point at it. Optional: the directional
+   *        indicator is the only thing that wants it, and a hit with no attacker
+   *        behind it is still a hit. Not copied — it's the attacker's live
+   *        position vector and a floater is removed from the scene on the line
+   *        after it hits, so a handler has to read it synchronously (same rule as
+   *        hud.scorePopup's).
+   */
+  takeDamage(amount, source = null) {
     const before = this.health;
     this.health = Math.max(0, this.health - amount);
 
     // Only report a real loss, so a hit landing at 0 HP doesn't re-trigger
     // feedback for damage that didn't happen.
-    if (this.health < before) this.onDamage?.(amount);
+    if (this.health < before) this.onDamage?.(amount, source);
+  }
+
+  /**
+   * Where a world point lies relative to where the player is facing, as radians
+   * clockwise from straight ahead. The HUD's hit indicator is the caller: an
+   * on-screen bearing is a screen-space angle, but deriving it needs `yaw` and
+   * `position`, which are this class's.
+   *
+   * XZ-planar, like every other spatial test in the game — a floater diving at
+   * the player from above still reads as coming from its compass bearing, which
+   * is the only thing an indicator around the crosshair can usefully say. Note
+   * `pitch` deliberately isn't in it: looking up shouldn't swing the wedges.
+   *
+   * Same rotation as the minimap's, and for the same reason it comes out in the
+   * right direction — world +X/+Z map to screen right/down once yaw is applied,
+   * and clockwise-from-up is what both the radar and a ring of wedges want. The
+   * sign is easy to talk yourself into; the hit driver sweeps (yaw, bearing)
+   * pairs rather than trusting this paragraph.
+   */
+  bearingTo(point) {
+    const dx = point.x - this.position.x;
+    const dz = point.z - this.position.z;
+    const sin = Math.sin(this.yaw);
+    const cos = Math.cos(this.yaw);
+
+    // The offset rotated into view space: x is screen-right, y is screen-*down*,
+    // hence the negation on the way into atan2, whose first argument is the one
+    // that grows clockwise.
+    return Math.atan2(dx * cos - dz * sin, -(dx * sin + dz * cos));
   }
 
   isDead() {
@@ -156,6 +202,14 @@ export class Player {
    */
   refillHealth() {
     this.health = PLAYER.maxHealth;
+
+    // Reported unconditionally, unlike onDamage's "only a real loss" guard. A
+    // refill at full health is still an event the player earned — the HP RESTORED
+    // notice and the choir already fire on a medkit taken at 100 — so going quiet
+    // here would leave one part of the same confirmation missing. onDamage's guard
+    // is about a specific degenerate case (a hit landing on the death frame, over
+    // the top of YOU DIED); there's no equivalent for healing.
+    this.onHeal?.();
   }
 
   reset() {

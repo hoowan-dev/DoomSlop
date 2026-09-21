@@ -190,7 +190,7 @@ export const PICKUP = {
   // off enemies.onDefeat, which never fires for a contact death or a between-rounds
   // sweep, so suiciding floaters and the round wipe can't pay out. At 0.15 against
   // ROUNDS.killsPerRound that's between three and four a round.
-  dropChance: 0.1,
+  dropChance: 0.15,
 
   size: 0.8, // cube edge, in world units — a little smaller than a floater's 1.2 across
   radius: 0.6, // collection radius; the player walks over it at this plus PLAYER.radius
@@ -273,6 +273,17 @@ export const MINIMAP = {
   // would misrepresent the fight it is.
   bossColor: '#b957d9',
   bossRadius: 6,
+
+  // Health drops. Drawn as a small cross rather than a third color of dot: the two
+  // dots on here are both things trying to kill you, and the one thing on the map
+  // that isn't shouldn't be told apart by hue alone. It's the same cross that's
+  // painted on the cube (PICKUP.crossColor), which is what ties the blip to the
+  // object you go and stand on. `arm` is the half-length of each stroke and
+  // `thickness` its width, both in CSS pixels — it is not a radius, so it doesn't
+  // share the naming of the dots above.
+  pickupColor: '#3ddc6a',
+  pickupArm: 3.4,
+  pickupThickness: 1.8,
 };
 
 // Floating "+100" over a kill. Timing lives here rather than in a CSS animation
@@ -287,6 +298,21 @@ export const POPUP = {
   lift: 0.5, // world units above the kill point where it starts
   rise: 1.8, // further world units it drifts up over its life
   fadeAt: 0.45, // fraction of life left when it starts fading; holds opaque above this
+};
+
+// The wedges that flick up around the crosshair pointing at whatever just hit the
+// player. One field, and the split is deliberate: hud.js builds the pool, so the
+// count has to be a number something reads, while the wedges' size, distance from
+// the reticle, color and lifetime are pure appearance and live in style.css — the
+// same division POPUP makes, where the timing is here because JS drives the rise
+// and the color and font are CSS.
+//
+// Six because floaters arrive in a swarm and several can land in the same second
+// from different sides, which is exactly when the indicator earns its keep. Unlike
+// the popups these don't track anything, so a slot needs no lifetime here: the CSS
+// animation is the lifetime, and the pool is walked round-robin.
+export const HITMARK = {
+  pool: 6,
 };
 
 // Every *effect* is a pitch-swept oscillator, most with a noise burst layered

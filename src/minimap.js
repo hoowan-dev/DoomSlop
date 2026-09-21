@@ -45,8 +45,12 @@ export class Minimap {
    * @param enemies the live enemy array (EnemyManager.enemies). Taken raw rather
    *        than via hitboxes(), which builds a new array per call — that would be
    *        an allocation every frame.
+   * @param pickups the live drop array (PickupManager.pickups). A second array
+   *        rather than one joined list, for the same reason effects.updateGlows
+   *        takes two: concatenating would allocate every frame, and the two are
+   *        drawn differently anyway.
    */
-  draw(player, enemies) {
+  draw(player, enemies, pickups) {
     this._resize();
 
     const ctx = this.ctx;
@@ -73,8 +77,12 @@ export class Minimap {
 
     ctx.translate(radius, radius);
 
-    // Cone first, so enemy dots sit on top of it rather than under it.
+    // Cone first, so enemy dots sit on top of it rather than under it. Drops go
+    // under the enemies deliberately: they don't move, so one being covered for a
+    // moment costs nothing, where a threat hidden under a medkit is the arrangement
+    // that gets the player killed.
     this._drawCone(ctx, scale);
+    this._drawPickups(ctx, scale, player, pickups);
     this._drawEnemies(ctx, scale, player, enemies);
     this._drawPlayer(ctx);
 
@@ -128,6 +136,44 @@ export class Minimap {
       );
       ctx.fillStyle = enemy.isBoss ? MINIMAP.bossColor : MINIMAP.enemyColor;
       ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Health drops, as small upright crosses. Placement is identical to the enemy
+   * dots' — the same single ctx.rotate(player.yaw) with raw world offsets plotted
+   * into it, which is the one thing about this canvas that's easy to get subtly
+   * wrong and the thing the minimap driver actually measures.
+   *
+   * The per-item counter-rotation is what keeps the cross *upright* while the map
+   * turns under it. The dots don't need it because a circle is rotation-invariant;
+   * a cross left in the rotated frame would lean over into an X at most headings and
+   * stop reading as the symbol painted on the cube.
+   */
+  _drawPickups(ctx, scale, player, pickups) {
+    const rangeSq = MINIMAP.range * MINIMAP.range;
+    const arm = MINIMAP.pickupArm;
+
+    ctx.save();
+    ctx.rotate(player.yaw);
+    ctx.fillStyle = MINIMAP.pickupColor;
+
+    for (const item of pickups) {
+      const dx = item.mesh.position.x - player.position.x;
+      const dz = item.mesh.position.z - player.position.z;
+      if (dx * dx + dz * dz > rangeSq) continue;
+
+      ctx.save();
+      ctx.translate(dx * scale, dz * scale);
+      ctx.rotate(-player.yaw);
+      // Two overlapping bars rather than a stroked path: the arms are a couple of
+      // pixels wide, where a lineWidth that small lands between device pixels and
+      // comes out grey.
+      ctx.fillRect(-arm, -MINIMAP.pickupThickness / 2, arm * 2, MINIMAP.pickupThickness);
+      ctx.fillRect(-MINIMAP.pickupThickness / 2, -arm, MINIMAP.pickupThickness, arm * 2);
+      ctx.restore();
     }
 
     ctx.restore();

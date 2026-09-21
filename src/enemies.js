@@ -122,7 +122,10 @@ export class EnemyManager {
       const touching = distance <= kind.radius + PLAYER.radius;
 
       if (touching && !enemy.isBoss) {
-        this.player.takeDamage(kind.touchDamage);
+        // The mesh position goes along so the HUD can point at where the hit came
+        // from. Passed rather than copied — remove() takes the mesh out of the
+        // scene on the next line, so the hook has to read it synchronously.
+        this.player.takeDamage(kind.touchDamage, mesh.position);
         this.remove(enemy);
         continue;
       }
@@ -132,7 +135,7 @@ export class EnemyManager {
         // player could beat a 50-shot enemy by walking into it. So it sits on
         // the player and hits on a cooldown instead.
         if (enemy.cooldown <= 0) {
-          this.player.takeDamage(kind.touchDamage);
+          this.player.takeDamage(kind.touchDamage, mesh.position);
           enemy.cooldown = kind.attackInterval;
         }
       } else {

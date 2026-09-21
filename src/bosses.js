@@ -14,6 +14,7 @@ import evan from '../assets/images/evan.png';
 import kyle from '../assets/images/kyle.png';
 import michael from '../assets/images/michael.png';
 import nawwaf from '../assets/images/nawwaf.png';
+import will from '../assets/images/will.png';
 
 const LOADER = new THREE.TextureLoader();
 
@@ -25,12 +26,13 @@ const PORTRAITS = {
   KYLE: kyle,
   MICHAEL: michael,
   NAWWAF: nawwaf,
+  WILL: will,
 };
 
 /**
  * One shared material per boss, built at module scope for the same reason
  * enemies.js shares its geometry and materials: only one boss is ever on the
- * field, and a round is a long time to hold five copies of anything.
+ * field, and a round is a long time to hold a copy per roster entry of anything.
  *
  * Loading starts at import time, which is the point — reaching a boss takes
  * ROUNDS.killsPerRound kills, so every portrait is long since decoded by the time
@@ -62,8 +64,8 @@ const ROSTER = Object.values(BOSSES);
 
 /**
  * Which boss shows up this round. A uniform pick with no memory, so the same one
- * can turn up twice running — with five of them that's the occasional repeat, not
- * a rotation worth tracking state for.
+ * can turn up twice running — at this roster size that's the occasional repeat,
+ * not a rotation worth tracking state for.
  */
 export function randomBoss() {
   return ROSTER[Math.floor(Math.random() * ROSTER.length)];

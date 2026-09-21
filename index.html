@@ -15,12 +15,30 @@
 
     <!-- Crosshair + readouts. Text is filled in by src/hud.js. -->
     <div id="hud" aria-hidden="true">
+      <!-- Damage / heal vignette: a tint pulsing in from the edges of the view,
+           red when the player is hit and green when they pick health up. hud.js
+           swaps the color class and retriggers the animation; like #notice and
+           #muzzle its whole duration lives in style.css, since nothing waits on
+           it. First in the HUD on purpose — later siblings paint over earlier
+           ones, so a full-screen tint has to go under every readout and every
+           flash, none of which should be dimmed by it. -->
+      <div id="vignette"></div>
       <div id="crosshair"></div>
+      <!-- Wedges pointing at whatever just hit the player, arranged around the
+           crosshair. Deliberately empty: hud.js fills it with a pool of
+           HITMARK.pool slots and rotates each one to the bearing of a hit. -->
+      <div id="hitmarks"></div>
       <!-- Muzzle flash: a warm glow at the bottom of the screen, since there's
            no weapon model to flash. hud.js retriggers its CSS animation. -->
       <div id="muzzle"></div>
+      <!-- Health, bottom center and much larger than the rest of the readout. On
+           its own rather than in #readout because it's the one number that decides
+           whether to break off and go find a medkit, so it sits where the eye
+           already is — under the crosshair — at a size you can read without
+           looking away from what's shooting at you. After #muzzle in the source so
+           the flash glows behind it rather than over it. -->
+      <div id="health">HP --</div>
       <div id="readout">
-        <span id="health">HP --</span>
         <span id="score">SCORE --</span>
         <span id="round">ROUND --</span>
         <span id="progress">KILLS --</span>
@@ -70,7 +88,7 @@
            through config.js and hud.js. Bump it by hand; this is the only place
            it appears. Kept out of package.json's `version` too, which is a semver
            for the package, not a build number for the game. -->
-      <div id="build">BUILD 1.06</div>
+      <div id="build">BUILD 1.08</div>
     </div>
 
     <!-- Click-to-start / paused overlay. Shown whenever the pointer is unlocked.

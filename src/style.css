@@ -46,6 +46,110 @@ body {
   opacity: 1;
 }
 
+/* Hit-direction wedges, ringed around the crosshair. The outer element is a
+   zero-size anchor pinned to the exact center of the screen, carrying the bearing
+   as an inline rotate() written by hud.js; the wedge inside it is offset straight
+   up, so the parent's rotation swings it around the reticle. None of these numbers
+   is in config.js — nothing in the game reads the size, the distance or the
+   duration, which is why HITMARK holds only the pool count. */
+#hitmarks .hitmark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+
+/* A triangle by the border trick, pointing up — i.e. away from the crosshair and
+   toward whatever landed the hit. Its base sits 62px out, and the distance is the
+   difference between an indicator and clutter: at half this the wedges read as
+   debris stuck to the reticle rather than as a ring around it, and much further out
+   they leave the patch of screen the player is actually looking at. It also clears
+   the 14px hitmarker the crosshair swells to by a wide margin, so a wedge and a
+   confirmed hit can be up together without crowding. The drop shadow is what keeps
+   it legible against a wall already lit red by the thing that hit you. */
+#hitmarks .wedge {
+  position: absolute;
+  left: -16px;
+  top: -82px;
+  width: 0;
+  height: 0;
+  border-left: 16px solid transparent;
+  border-right: 16px solid transparent;
+  border-bottom: 20px solid #ff3a24;
+  filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.9));
+  opacity: 0;
+}
+
+#hitmarks .wedge.flash {
+  animation: hitmark 800ms ease-out;
+}
+
+/* Snaps in and then drifts outward as it fades, which is what makes the direction
+   read in the half-second it's up — a wedge that only faded could be anywhere.
+   translateY is negative because the wedge sits above its anchor, and it runs in
+   the parent's already-rotated frame, so this is radially outward at any bearing. */
+@keyframes hitmark {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.7);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-22px) scale(1);
+  }
+}
+
+/* Damage / heal vignette: a tint pulsing in from the edges of the view. One
+   element, one gradient and one keyframe for both colors — the class hud.js adds
+   supplies --tint, so red and green can't drift into two different fades.
+   Transparent well into the frame on purpose: the middle of the screen is where
+   the player is actually aiming and has to stay clean, so this reads as the edges
+   closing in rather than as a filter over the whole view. */
+#vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 30%, var(--tint) 100%);
+  opacity: 0;
+}
+
+#vignette.damage {
+  --tint: rgba(214, 26, 12, 0.92);
+}
+
+/* Deliberately weaker than the damage tint, and not only because green reads
+   brighter at the same alpha: this one is confirmation that something good
+   happened, where the red one is meant to be alarming. */
+#vignette.heal {
+  --tint: rgba(37, 214, 96, 0.7);
+}
+
+#vignette.flash {
+  animation: vignette 520ms ease-out;
+}
+
+/* Fast in, slow out. A symmetrical fade reads as the screen being tinted; a hard
+   leading edge reads as an impact. Shorter than the hit wedges above, which have
+   to be readable rather than just felt. */
+@keyframes vignette {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 #muzzle {
   position: absolute;
   left: 50%;
@@ -69,6 +173,26 @@ body {
   to {
     opacity: 0;
   }
+}
+
+/* Health, bottom center. Deliberately the loudest thing in the HUD: it's the only
+   readout that changes what the player should do next, and at 18px in a corner it
+   was being missed until the screen went red. Big, bold, and directly under the
+   crosshair, so it's read without looking away from the fight.
+
+   The heavy shadow is doing real work here rather than being decoration — this sits
+   inside #muzzle's glow, so every shot briefly lights the area behind the number. */
+#health {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 18px;
+  text-align: center;
+  font-size: 46px;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  color: #f2e3cd;
+  text-shadow: 0 2px 4px #000, 0 0 18px rgba(0, 0, 0, 0.95);
 }
 
 #readout {
