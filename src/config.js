@@ -177,6 +177,62 @@ export const ROUNDS = {
   speedStep: 0.5,
 };
 
+// The drop system: what a dead enemy leaves behind. One item so far — a health
+// cube that refills the bar — so this is both "the drop table" and "that item's
+// block. A second drop type would split it in two, with `dropChance` staying here
+// and per-item fields moving down.
+//
+// Colors here are CSS strings rather than the 0x literals the rest of this file
+// uses, like MINIMAP's: the cross is drawn into a canvas with the 2D API (see
+// pickups.js), not handed to a three.js material.
+export const PICKUP = {
+  // Chance a defeated enemy drops one. Rolled per *shot* kill only — the roll hangs
+  // off enemies.onDefeat, which never fires for a contact death or a between-rounds
+  // sweep, so suiciding floaters and the round wipe can't pay out. At 0.15 against
+  // ROUNDS.killsPerRound that's between three and four a round.
+  dropChance: 0.1,
+
+  size: 0.8, // cube edge, in world units — a little smaller than a floater's 1.2 across
+  radius: 0.6, // collection radius; the player walks over it at this plus PLAYER.radius
+  // Where it floats. Under PLAYER.eyeHeight so the player looks slightly *down* at
+  // it, which is what makes it read as something lying in the arena rather than as
+  // another thing at eye level coming for them.
+  hoverHeight: 1,
+
+  // The float, and the spin, and the two things that make it read as an item rather
+  // than as scenery. Each drop gets a random phase, so a cluster doesn't bob in
+  // lockstep. Spin is radians per second about Y only — tumbling it like an enemy
+  // would hide the cross half the time.
+  bobAmplitude: 0.15,
+  bobSpeed: 2,
+  spin: 1.1,
+
+  // Drops expire. Nothing in the spec says they should, but at ~3.5 a round and no
+  // expiry the arena silently fills with medkits and the health bar stops mattering.
+  // A life makes collecting one a decision about *when* to break off and go get it.
+  life: 22,
+  // It shrinks away over the last of that life instead of blinking out of existence.
+  // Scaling the mesh scales the halo with it for free, since a sprite takes scale off
+  // its world matrix — the light is the one part that doesn't follow, and it's gone
+  // within a frame of the cube.
+  shrinkTime: 1.2,
+
+  bodyColor: '#e9f1ea', // the box: near-white, so the cross is what you see
+  crossColor: '#27c953',
+  edgeColor: '#9fb3a4', // a painted-on border, so the cube's faces read apart
+
+  // Green, and the one green light in the game: the enemies are red and the boss is
+  // purple, so color alone says "this one is for you". Same two halves as an enemy's
+  // glow — the point light in effects.js and the halo in glow.js — and the same
+  // reason they share a block.
+  //
+  // Dimmer than a floater's 20 despite reading as bright, which is 1/d²: this hovers
+  // at 1 unit where a floater sits at 1.6, so the floor under it is 2.5x closer to
+  // the light. `haloScale` matches the enemies' 2.2 for the reason spelled out in
+  // BOSS.glow — that ratio, not the world size, is what decides how the aura reads.
+  glow: { color: 0x2bff6a, intensity: 9, distance: 7, haloScale: 2.2, haloOpacity: 0.6 },
+};
+
 export const WEAPON = {
   fireInterval: 0.15, // seconds between shots
   range: 100,
@@ -272,6 +328,30 @@ export const SOUND = {
     pitchHigh: 880,
   },
 
+  // Collecting a health drop: a short choir chord, and the one sound here with no
+  // noise layer and no pitch sweep. Everything else in the game is percussive —
+  // cracks, blips, hits — so a chord that *swells* is the only one that could read
+  // as a blessing rather than as another event.
+  //
+  // The voices are a major triad plus the octave, each one doubled a few cents
+  // either side of pitch. That doubling is what makes eight sines sound like a
+  // section instead of an organ: the pairs beat slowly against each other, which is
+  // the chorusing a real unison has. `stagger` then starts them low to high so the
+  // chord blooms upward over ~135ms rather than landing as a block.
+  //
+  // `gain` is *per voice* and there are eight, so the effective ceiling is
+  // masterVolume * gain * 8 = 0.17 — in line with `damage`, and only reached if all
+  // eight happen to align in phase, which the detuning is actively preventing.
+  pickup: {
+    root: 392, // G4
+    ratios: [1, 1.25, 1.5, 2], // major triad + octave
+    detune: 7, // cents, applied +/- to the two voices of each pair
+    stagger: 0.045, // seconds between entries, low voice first
+    attack: 0.12, // long enough that there's no click; this one has no transient
+    duration: 0.9,
+    gain: 0.06,
+  },
+
   // The looping music bed — assets/audio/doom.mp3, the one audio file in the
   // project, because a minute and a half of music is not something oscillators
   // produce. Everything else in this block is still synthesized.
@@ -324,6 +404,15 @@ export const EFFECTS = {
   // those shader programs, so spawning and killing enemies would rebuild every
   // shader in the game mid-fight. The nearest `glowPool` enemies get one.
   glowPool: 6,
+
+  // A second, separate budget for the health drops, rather than letting them into
+  // the pool above. The pools have different jobs and different tenancy: an enemy's
+  // light is there to make a closing threat countable, while a drop just lies on the
+  // floor — and lies there for PICKUP.life. On a shared pool two drops near the
+  // player would hold lights that the enemies in their face need, which is exactly
+  // the arrangement the nearest-wins rule exists to prevent. Small because drops are
+  // few: three on the floor at once is already a slow round.
+  pickupGlowPool: 3,
 
   muzzleFlash: {
     color: 0xffd9a0, // the tracer's warm white

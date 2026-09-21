@@ -141,6 +141,48 @@ body {
   }
 }
 
+/* Pickup notice: "HP RESTORED". Below the crosshair, where #announce is above it —
+   a message about something that just happened to the player shouldn't appear in the
+   spot reserved for a round starting. Clear of #readout, which is bottom *left*.
+   Green, the color the score popups already use for a reward and the one the health
+   cube itself glows. Rises as it fades, like a popup, so it reads as a pickup
+   confirmation rather than as a status line. */
+#notice {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 26%;
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  color: #5fe27a;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.95);
+  opacity: 0;
+}
+
+#notice.flash {
+  animation: notice 1.4s ease-out;
+}
+
+@keyframes notice {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  65% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
 /* Boss health bar. left/top are written by hud.js as the bar's *center*, hence
    the translate — it's tracking a world object, so both change every frame. */
 #bossbar {

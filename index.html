@@ -47,6 +47,13 @@
         <div id="announce-title"></div>
         <div id="announce-sub"></div>
       </div>
+      <!-- Pickup notice, lower center: "HP RESTORED" when a health drop is taken.
+           hud.js writes the text and retriggers the CSS animation, the same dance as
+           #announce — and like the muzzle flash, its duration lives in style.css and
+           nowhere else. #announce's 1.2s has to be kept in step with ROUNDS.bossDelay
+           by hand because the round machine waits on it; nothing waits on this, so it
+           needs no config number at all. -->
+      <div id="notice"></div>
       <!-- Boss health bar. hud.js projects the boss's world position to screen
            space and writes left/top every frame, so it tracks its head. -->
       <div id="bossbar" class="hidden"><div id="bossbar-fill"></div></div>
@@ -63,7 +70,7 @@
            through config.js and hud.js. Bump it by hand; this is the only place
            it appears. Kept out of package.json's `version` too, which is a semver
            for the package, not a build number for the game. -->
-      <div id="build">BUILD 1.05</div>
+      <div id="build">BUILD 1.06</div>
     </div>
 
     <!-- Click-to-start / paused overlay. Shown whenever the pointer is unlocked.

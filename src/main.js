@@ -3,6 +3,7 @@ import { createWorld } from './world.js';
 import { Input } from './input.js';
 import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
+import { PickupManager } from './pickups.js';
 import { Weapon } from './weapon.js';
 import { Effects } from './effects.js';
 import { Sound } from './sound.js';
@@ -30,8 +31,21 @@ const minimap = new Minimap(camera);
 
 let score = 0;
 const enemies = new EnemyManager(scene, player);
+const pickups = new PickupManager(scene, player);
 const effects = new Effects(scene);
 const sound = new Sound();
+
+// What a health drop does. All three parts of it are here rather than in
+// pickups.js, which knows only that an item was taken: healing is the player's,
+// the sound is sound.js's, and the message is the HUD's. Same shape as the kill
+// hook below — the manager reports, main.js decides what it means.
+pickups.onCollect = () => {
+  // The same all-or-nothing refill a boss kill pays out. Deliberately reused rather
+  // than a partial heal: nothing in the game restores a fraction of the bar.
+  player.refillHealth();
+  sound.healthPickup();
+  hud.notice('HP RESTORED');
+};
 
 // The round loop. It drives enemies (wiping the field, gating spawns, summoning
 // the boss) and the player (refilling health after a boss), and reports its
@@ -50,6 +64,12 @@ enemies.onDefeat = (enemy) => {
   // the only hook that carries the dead enemy itself — weapon's onKill gets the
   // points but not the position. Reported before the mesh is garbage.
   hud.scorePopup(enemy.kind.scoreValue, enemy.mesh.position);
+  // The drop roll. Hanging it off this hook rather than off remove() is what gives
+  // it the right rules for free: onDefeat fires only from damage(), so a floater
+  // that reaches the player and a field wiped between rounds leave nothing behind.
+  // You have to actually kill them — the same rule the score and the round count
+  // already follow.
+  pickups.maybeDrop(enemy.mesh.position);
 };
 
 const weapon = new Weapon(
@@ -127,6 +147,9 @@ function restart() {
   // reporting defeats, so rounds.reset() lands on an empty arena with no kills
   // credited for the wipe.
   enemies.clear();
+  // The only caller: drops survive round changes on purpose, so this is the one
+  // place a live one is ever swept off the floor.
+  pickups.clear();
   effects.clear();
   hud.clearPopups();
   player.reset();
@@ -165,6 +188,11 @@ function frame() {
     player.update(dt);
     enemies.update(dt);
     weapon.update(dt, input.firing);
+    // After weapon.update, so a drop rolled by a kill this frame is on the floor and
+    // bobbing at its hover height before it's ever drawn — spawned at the kill's X/Z,
+    // it would otherwise paint one frame unmoved. Before the death check below, so
+    // walking onto a medkit on the frame a floater lands its hit still saves you.
+    pickups.update(dt);
     // After weapon.update, so a kill scored this frame advances the round this
     // frame rather than next. Only called while running, which is what keeps the
     // inter-round timers paused with the game.
@@ -185,9 +213,11 @@ function frame() {
   hud.updateBoss(enemies.boss);
   minimap.draw(player, enemies.enemies);
   // The raw enemy array, like minimap.draw takes — hitboxes() would allocate one
-  // every frame. After enemies.update() so the glows sit where the meshes ended up,
-  // and before render() so the light positions are picked up this frame.
-  effects.updateGlows(enemies.enemies, player.position);
+  // every frame. Two arrays rather than one joined: the pools are separate, and
+  // concatenating would allocate here too. After enemies.update()/pickups.update() so
+  // the glows sit where the meshes ended up, and before render() so the light
+  // positions are picked up this frame.
+  effects.updateGlows(enemies.enemies, pickups.pickups, player.position);
 
   renderer.render(scene, camera);
 }
@@ -199,6 +229,7 @@ if (import.meta.env.DEV) {
   window.__game = {
     player,
     enemies,
+    pickups,
     weapon,
     effects,
     sound,

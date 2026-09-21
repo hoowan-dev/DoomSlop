@@ -110,6 +110,18 @@ export class Effects {
     this._glowPicks = new Array(EFFECTS.glowPool).fill(null);
     this._glowDists = new Float64Array(EFFECTS.glowPool);
 
+    // A second pool for the health drops, with its own budget so a drop lying on the
+    // floor can't take a light off an enemy closing on the player. Same fixed-count
+    // rule applies — these are added here, once, and dimmed rather than removed.
+    this.pickupGlows = [];
+    for (let i = 0; i < EFFECTS.pickupGlowPool; i++) {
+      const light = new THREE.PointLight(0xffffff, 0, 1);
+      this.scene.add(light);
+      this.pickupGlows.push(light);
+    }
+    this._pickupPicks = new Array(EFFECTS.pickupGlowPool).fill(null);
+    this._pickupDists = new Float64Array(EFFECTS.pickupGlowPool);
+
     // One light for the muzzle flash rather than a pool: its life is shorter than
     // WEAPON.fireInterval, so two can never be alight at once.
     const flash = EFFECTS.muzzleFlash;
@@ -199,41 +211,55 @@ export class Effects {
   }
 
   /**
-   * Hands the glow pool to the enemies nearest `viewpoint` (the player's eye) and
-   * idles the spares. Nearest rather than first-come because the pool is smaller
-   * than a late round's field, and a distant enemy holding a light while one in the
-   * player's face has none is the one arrangement that would be obvious.
+   * Hands each glow pool to the things nearest `viewpoint` (the player's eye) and
+   * idles the spares.
+   *
+   * Enemies and pickups are passed as two arrays against two pools rather than being
+   * concatenated into one: the budgets are separate on purpose (see
+   * EFFECTS.pickupGlowPool), and joining them would allocate an array every frame.
    *
    * Called from main.js outside the running check, alongside minimap.draw, so the
    * arena keeps its glows behind the pause overlay instead of going flat.
    */
-  updateGlows(enemies, viewpoint) {
-    const picks = this._glowPicks;
-    const dists = this._glowDists;
-    const pool = this.glows.length;
+  updateGlows(enemies, pickups, viewpoint) {
+    this._assignGlows(enemies, this.glows, this._glowPicks, this._glowDists, viewpoint);
+    this._assignGlows(pickups, this.pickupGlows, this._pickupPicks, this._pickupDists, viewpoint);
+  }
+
+  /**
+   * One pool's worth of the above. `items` need only carry a `mesh` and a `kind` —
+   * which is what lets an enemy and a pickup through the same code path, since both
+   * read their glow off the config block they were made from.
+   *
+   * Nearest rather than first-come because a pool is smaller than what can be on the
+   * field, and a distant thing holding a light while one in the player's face has
+   * none is the single arrangement that would be obvious.
+   */
+  _assignGlows(items, lights, picks, dists, viewpoint) {
+    const pool = lights.length;
     let count = 0;
 
-    // Insertion into a sorted window of fixed length: O(enemies * pool) and
+    // Insertion into a sorted window of fixed length: O(items * pool) and
     // allocation-free, where mapping distances out and sorting them would hand the
     // GC two arrays every frame.
-    for (const enemy of enemies) {
-      const distSq = enemy.mesh.position.distanceToSquared(viewpoint);
+    for (const item of items) {
+      const distSq = item.mesh.position.distanceToSquared(viewpoint);
       if (count === pool && distSq >= dists[count - 1]) continue;
       if (count < pool) count++;
 
-      let i = count - 1; // the slot that just opened, or the far enemy being evicted
+      let i = count - 1; // the slot that just opened, or the far item being evicted
       while (i > 0 && dists[i - 1] > distSq) {
         dists[i] = dists[i - 1];
         picks[i] = picks[i - 1];
         i--;
       }
       dists[i] = distSq;
-      picks[i] = enemy;
+      picks[i] = item;
     }
 
     for (let i = 0; i < pool; i++) {
-      const light = this.glows[i];
-      const enemy = picks[i];
+      const light = lights[i];
+      const item = picks[i];
       // Dropped rather than left in place, so a slot can't hold a dead enemy's mesh
       // alive until the next frame reassigns it.
       picks[i] = null;
@@ -243,10 +269,10 @@ export class Effects {
         continue;
       }
 
-      // Color and reach come off `kind`, so the boss glows purple like its orb and
-      // a floater red — same rule as its speed, radius, and damage.
-      const glow = enemy.kind.glow;
-      light.position.copy(enemy.mesh.position);
+      // Color and reach come off `kind`, so the boss glows purple like its orb, a
+      // floater red and a health drop green — same rule as speed, radius and damage.
+      const glow = item.kind.glow;
+      light.position.copy(item.mesh.position);
       light.color.set(glow.color);
       light.distance = glow.distance;
       light.intensity = glow.intensity;
@@ -356,5 +382,6 @@ export class Effects {
     this.flashBorn = false;
     this.flash.intensity = 0;
     for (const light of this.glows) light.intensity = 0;
+    for (const light of this.pickupGlows) light.intensity = 0;
   }
 }

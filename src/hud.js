@@ -27,6 +27,7 @@ export class Hud {
     this.announceEl = document.getElementById('announce');
     this.announceTitleEl = document.getElementById('announce-title');
     this.announceSubEl = document.getElementById('announce-sub');
+    this.noticeEl = document.getElementById('notice');
     this.bossBarEl = document.getElementById('bossbar');
     this.bossFillEl = document.getElementById('bossbar-fill');
 
@@ -80,6 +81,23 @@ export class Hud {
     this.announceEl.classList.remove('flash');
     void this.announceEl.offsetWidth;
     this.announceEl.classList.add('flash');
+  }
+
+  /**
+   * A one-line message under the crosshair: "HP RESTORED" when a health drop is
+   * taken. Separate from announce() rather than a third argument to it — that one
+   * owns the center of the screen and is driven by the round machine, which times
+   * ROUNDS.bossDelay against its animation. This has no such coupling, and nothing
+   * waits on it, so its whole duration is the CSS.
+   */
+  notice(text) {
+    this.noticeEl.textContent = text;
+
+    // Same retrigger dance as the announcement and the muzzle flash: without the
+    // reflow between, a second pickup inside the animation window wouldn't replay it.
+    this.noticeEl.classList.remove('flash');
+    void this.noticeEl.offsetWidth;
+    this.noticeEl.classList.add('flash');
   }
 
   /**

@@ -152,6 +152,24 @@ export class Sound {
   }
 
   /**
+   * Collecting a health drop: a short choir chord that swells instead of cracking.
+   *
+   * Eight sine voices — a major triad plus the octave, each doubled a few cents
+   * either side of pitch. The doubling is the whole trick: the pairs beat slowly
+   * against each other, which is the chorusing that makes a unison sound like
+   * several people rather than one organ pipe. They enter low to high so the chord
+   * blooms upward rather than landing as a block.
+   */
+  healthPickup() {
+    const s = SOUND.pickup;
+    s.ratios.forEach((ratio, i) => {
+      for (const detune of [-s.detune, s.detune]) {
+        this._voice(s.root * ratio, detune, i * s.stagger, s.attack, s.duration, s.gain);
+      }
+    });
+  }
+
+  /**
    * UI click for the pause overlay. Rising when resuming, falling when pausing —
    * the same sound inverted, so the two read as a matched pair instead of as
    * unrelated beeps.
@@ -184,6 +202,39 @@ export class Sound {
     const env = this.ctx.createGain();
     env.gain.setValueAtTime(gain, t);
     // exponentialRampToValueAtTime rejects a target of 0, hence the epsilon.
+    env.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+
+    osc.connect(env).connect(this.master);
+    osc.start(t);
+    osc.stop(t + duration);
+  }
+
+  /**
+   * One held, detuned voice of a chord. The counterpart to _tone(): that one sweeps
+   * its pitch and decays percussively, while this holds a pitch and *fades in*, which
+   * is the difference between an event and a sustained note.
+   *
+   * @param delay seconds from now before this voice enters, so a chord can be
+   *        staggered. Its duration runs from its own start, not from the chord's.
+   * @param detune cents off `freq`, which is what turns doubled voices into a
+   *        section. Kept on the node rather than folded into the frequency so the
+   *        number in config stays readable as an interval.
+   */
+  _voice(freq, detune, delay, attack, duration, gain) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + delay;
+
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    osc.detune.value = detune;
+
+    const env = this.ctx.createGain();
+    // From an epsilon rather than 0 so the fade out below can be exponential too —
+    // and a linear attack, because an exponential one from near-silence is
+    // indistinguishable from a click at this length.
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.linearRampToValueAtTime(gain, t + attack);
     env.gain.exponentialRampToValueAtTime(0.0001, t + duration);
 
     osc.connect(env).connect(this.master);
