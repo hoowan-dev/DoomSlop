@@ -152,6 +152,12 @@ function frame() {
   const dt = Math.min(timer.getDelta(), 0.1);
 
   if (running) {
+    // Skip-round cheat. Read here rather than in input.js because "~ means skip a
+    // round" is gameplay meaning, and input.js only reports hardware — it hands
+    // over the edge, main.js decides what it's for. Before rounds.update() so the
+    // flash it queues flushes on this frame instead of the next.
+    if (input.consumePress('Backquote')) rounds.skip();
+
     player.update(dt);
     enemies.update(dt);
     weapon.update(dt, input.firing);

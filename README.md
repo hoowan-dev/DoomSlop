@@ -48,7 +48,7 @@ Neither failure is visible locally: `npm run dev` and `npm run preview` both ser
 
 ## Playing
 
-Click to lock the mouse, `WASD` to move, mouse to aim, hold click to fire, `Esc` to pause. Red floaters spawn at a random bearing 25 units out and close in; each is a one-shot kill worth 100. Touching you costs 25 HP and consumes the enemy, so four contacts ends the run. The spawn interval tightens from 1.6s to 0.45s over the first 90 seconds.
+Click to lock the mouse, `WASD` to move, mouse to aim, hold click to fire, `Esc` to pause, `~` to skip a round. Red floaters spawn at a random bearing 25 units out and close in; each is a one-shot kill worth 100. Touching you costs 25 HP and consumes the enemy, so four contacts ends the run. The spawn interval tightens from 1.6s to 0.45s over the first 90 seconds.
 
 The game is structured in rounds, announced by a flash of large text above the crosshair and tracked after the HP and SCORE readouts, alongside a `KILLS 12/25` count of how far you are from the boss. `ROUND 1` flashes as play begins. Shoot 25 floaters and the field is swept clear, `BOSS ROUND` flashes with the boss's name under it, and a large purple boss walks into the empty arena: 50 shots to kill, worth 5000, with a small health bar floating above its head. Kill it and `ROUND 2` flashes, the floaters come back, and it repeats.
 
@@ -69,6 +69,8 @@ Four sound effects play: firing, killing an enemy, taking damage, and a click wh
 A circular radar in the top right shows you at the center and every enemy within 32 units as a red dot — or a larger magenta one for the boss, which is five times a floater's size — with a pale wedge for your field of view. It rotates with you: you always point up the map and the world turns around you, so a dot above center is something ahead of you and a dot inside the wedge is something you can already see.
 
 Mouse look ignores any single mouse event that reports more than 400 pixels of movement (`INPUT.maxLookDelta`). Pointer lock occasionally reports a cursor warp as one enormous movement, which lands as the view snapping to a heading you never aimed at; 400px is well past what a hand can do in the ~10ms one event covers, so real flicks are unaffected. Unread movement is also discarded whenever pointer lock changes, so a flick that ends as you hit Esc isn't replayed when you resume.
+
+The controls are listed permanently in the top left, including one cheat: **`~` skips to the next round.** It abandons the current round wherever you are in it — mid-fight or mid-boss — wipes the field and starts the next one, with the usual `ROUND N` flash. It pays nothing for what it skips: no score for a boss you didn't kill, and no heal, so a damaged player stays damaged. Handy for reaching round 8 without grinding for it, and it works in the deployed build too, not just in dev.
 
 A build number sits in the bottom right, dimmer and smaller than the readouts opposite it. It's a literal in [index.html](index.html) rather than anything generated — not `package.json`'s `version`, not a git hash, not a timestamp — so bumping it is a one-line edit in the file that shows it, and that's the only place it appears.
 

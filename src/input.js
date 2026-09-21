@@ -14,6 +14,12 @@ export class Input {
     this.canvas = canvas;
     this.keys = new Set();
 
+    // Keys that went down since the last consumePress() for each, as opposed to
+    // `keys`, which is what's held right now. Held state is wrong for anything
+    // that should happen once per press — a per-frame isDown() check on a skip or
+    // a toggle fires every frame the key is down, sixty times for one tap.
+    this.presses = new Set();
+
     // Mouse movement accumulated since the last consumeMouseDelta() call.
     this.mouseDX = 0;
     this.mouseDY = 0;
@@ -30,6 +36,10 @@ export class Input {
   _bind() {
     document.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
+      // e.repeat filters the OS auto-repeat, so holding the key is one press and
+      // not a stream of them. Codes, not `e.key`: `~` only arrives as a key with
+      // Shift held, while Backquote is the physical key either way.
+      if (!e.repeat) this.presses.add(e.code);
     });
     document.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
@@ -47,6 +57,10 @@ export class Input {
       // aiming the click, not to looking around.
       this.mouseDX = 0;
       this.mouseDY = 0;
+      // Unread presses go with it, for the same reason: main.js only drains these
+      // while running, so a tap that lands during a pause would otherwise fire on
+      // the frame after resume.
+      this.presses.clear();
 
       if (!this.locked) {
         // Dropping lock (Esc, alt-tab) should never leave keys or the trigger stuck.
@@ -88,6 +102,16 @@ export class Input {
 
   isDown(code) {
     return this.keys.has(code);
+  }
+
+  /**
+   * True if `code` went down since this was last asked, and consumes it — so one
+   * physical tap reads true exactly once, to exactly one caller. Destructive like
+   * consumeMouseDelta(), and for the same reason: an edge is a single event, and
+   * two readers of one event means one of them is wrong.
+   */
+  consumePress(code) {
+    return this.presses.delete(code);
   }
 
   /** Returns the mouse movement since the last call and resets the accumulator. */

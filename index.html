@@ -25,6 +25,19 @@
         <span id="round">ROUND --</span>
         <span id="progress">KILLS --</span>
       </div>
+      <!-- In-play controls reference, top left. Static text like #build — no JS
+           reads or writes it. The overlay carries its own shorter summary of the
+           same four movement keys, which is the pre-game pitch (and readable
+           there, where this panel is dimmed behind the overlay); this one is the
+           full list and the only place the ~ cheat is advertised. Keep them in
+           step by hand if a real control is ever added. -->
+      <div id="controls">
+        <span class="key">WASD</span><span>MOVE</span>
+        <span class="key">MOUSE</span><span>LOOK</span>
+        <span class="key">CLICK</span><span>SHOOT</span>
+        <span class="key">ESC</span><span>PAUSE</span>
+        <span class="key">~</span><span>SKIP ROUND</span>
+      </div>
       <!-- Round and boss announcements. hud.js sets the text and retriggers the
            CSS animation. The flash lives on the wrapper so the title and the line
            under it fade as one thing. That second line is the round's enemy speed
@@ -50,7 +63,7 @@
            through config.js and hud.js. Bump it by hand; this is the only place
            it appears. Kept out of package.json's `version` too, which is a semver
            for the package, not a build number for the game. -->
-      <div id="build">BUILD 1.0</div>
+      <div id="build">BUILD 1.01</div>
     </div>
 
     <!-- Click-to-start / paused overlay. Shown whenever the pointer is unlocked. -->

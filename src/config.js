@@ -94,7 +94,7 @@ export const ROUNDS = {
 };
 
 export const WEAPON = {
-  fireInterval: 0.2, // seconds between shots
+  fireInterval: 0.15, // seconds between shots
   range: 100,
 
   // Where the tracer starts, in normalized screen coordinates: (0, 0) is the

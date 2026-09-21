@@ -194,6 +194,29 @@ body {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
 }
 
+/* Controls reference, top left — the one corner with nothing else in it, so it
+   needs no coordination with the radar's size or the readout's length. Two
+   columns so the actions line up in a block instead of going ragged off keys that
+   run 1 to 5 characters; both columns are left-aligned so the panel's own left
+   edge stays flush with the screen edge it's anchored to. Dimmed like #build:
+   it's a reference you glance at, not a readout you track. */
+#controls {
+  position: absolute;
+  top: 20px;
+  left: 24px;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 3px 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: rgba(216, 216, 216, 0.42);
+  text-shadow: 0 1px 2px #000;
+}
+
+#controls .key {
+  color: rgba(226, 232, 245, 0.72);
+}
+
 /* Build number, opposite corner from #readout and deliberately quieter than it:
    smaller and dimmed, because it's provenance rather than something you read
    while playing. Its text is a literal in index.html — no JS writes it. */

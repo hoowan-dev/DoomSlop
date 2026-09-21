@@ -100,6 +100,40 @@ export class Rounds {
   }
 
   /**
+   * Cheat: abandon the current round and start the next one. Bound to ~ in
+   * main.js, which only offers it while the game is running.
+   *
+   * One implementation covers all four phases, which is why it wipes and gates
+   * spawning unconditionally: from `fighting` that clears a live field and stops
+   * the spawner for the breather, and from the other three it's a no-op on an
+   * already-empty arena with spawning already off.
+   *
+   * Two things it deliberately does *not* do, both of which the existing
+   * boundaries hand over for free:
+   * - **No score and no kill credit.** The sweep goes through removeAll(), which
+   *   never fires onDefeat, so skipping past a live boss can't pay out its 5000.
+   * - **No heal.** refillHealth() is the boss-death transition's payment for
+   *   actually killing it; a skip is a jump, not a win, so a damaged player stays
+   *   damaged. That also keeps this from doubling as a heal button.
+   *
+   * Goes through _startRound() rather than repeating its two steps, so the speed
+   * push and the flash can't drift from a real round start — the exact drift that
+   * method exists to prevent.
+   */
+  skip() {
+    this.enemies.removeAll();
+    this.enemies.setSpawning(false);
+    this.bossDown = false;
+    // Cleared for the same reason reset() does it: a boss that was announced but
+    // skipped past must not be the face on the next flash. The `fighting` case
+    // redraws it at the wipe regardless, so this is about not leaving a lie behind.
+    this.bossIdentity = null;
+    this.round++;
+    this.kills = 0;
+    this._startRound('breather', ROUNDS.roundDelay);
+  }
+
+  /**
    * Something was shot dead. Wired to `enemies.onDefeat` by main.js.
    *
    * Contact kills never reach here — enemies.js only reports from damage(), not
