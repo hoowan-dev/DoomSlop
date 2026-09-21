@@ -14,6 +14,65 @@ const MATERIAL = new THREE.MeshLambertMaterial({ color: 0xc8503c, flatShading: t
 const BOSS_GEOMETRY = new THREE.IcosahedronGeometry(BOSS.radius, 1);
 const BOSS_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x9b30c4, flatShading: true });
 
+/**
+ * The halo's falloff, drawn into a canvas at import time rather than shipped as an
+ * image. Same call as sound.js synthesizing its effects instead of loading samples:
+ * it keeps the repo asset-free (the boss portraits are the one exception) and a
+ * gradient this simple is less code than a file would be plumbing.
+ *
+ * One texture for every enemy of every tier — the per-kind color is the sprite
+ * *material's* tint over this white, so there's nothing per-kind in the map itself.
+ */
+const HALO_TEXTURE = (() => {
+  const size = 64; // it's a soft blur; more pixels would be storing noise
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+
+  const ctx = canvas.getContext('2d');
+  const r = size / 2;
+  const gradient = ctx.createRadialGradient(r, r, 0, r, r, r);
+  // Weighted toward the outer half on purpose. The enemy's own body hides the middle
+  // of this quad (see _halo), so the stops that actually get seen are the ones past
+  // ~45% — a plain 1-to-0 ramp puts most of its brightness where the body is and
+  // leaves the aura outside the silhouette almost invisible.
+  gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+  gradient.addColorStop(0.45, 'rgba(255, 255, 255, 0.75)');
+  gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.25)');
+  gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+
+  return new THREE.CanvasTexture(canvas);
+})();
+
+/**
+ * One halo material per tier, sharing the one texture — the same reasoning as the
+ * shared geometry above. The color is `kind.glow.color`, the same field the point
+ * light in effects.js reads, so the aura and the light it casts can't drift apart.
+ *
+ * Note this reads config at *import* time, unlike the light, which reads it per
+ * frame: a driver retuning `glow.color` live will move the light and not the halo.
+ */
+function haloMaterial(kind) {
+  return new THREE.SpriteMaterial({
+    map: HALO_TEXTURE,
+    color: kind.glow.color,
+    opacity: kind.glow.haloOpacity,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    // Depth *tested* but not written, and the contrast with the boss portrait is the
+    // point: that one turns testing off because the orb's near facets would hide it.
+    // A halo must keep it, or it would paint over nearer enemies and straight
+    // through the arena walls. Not writing depth is what stops two overlapping
+    // halos, or the portrait behind one, from cutting holes in each other.
+    depthWrite: false,
+  });
+}
+
+const HALO_MATERIAL = haloMaterial(ENEMY);
+const BOSS_HALO_MATERIAL = haloMaterial(BOSS);
+
 // Scratch vector for steering, reused across every enemy every frame.
 const STEER = new THREE.Vector3();
 
@@ -199,12 +258,13 @@ export class EnemyManager {
     const y = kind.spawnHeightMin + Math.random() * (kind.spawnHeightMax - kind.spawnHeightMin);
     mesh.position.set(x, y, z);
 
+    mesh.add(this._halo(kind, isBoss));
     if (identity) mesh.add(this._portrait(kind, identity));
 
     // Without this the mesh carries an identity matrixWorld until the next
     // render, and a raycast would treat it as sitting at the world origin —
-    // i.e. on top of the player. Recurses into the portrait, so it has to be
-    // parented above rather than after this.
+    // i.e. on top of the player. Recurses into the halo and the portrait, so
+    // both have to be parented above rather than after this.
     mesh.updateMatrixWorld();
 
     this.scene.add(mesh);
@@ -225,6 +285,29 @@ export class EnemyManager {
     };
     this.enemies.push(enemy);
     return enemy;
+  }
+
+  /**
+   * The glow burning around the body, as a sprite parented to the mesh. Everything
+   * the portrait below gets for free applies here for the same reasons: it billboards
+   * (so the aura is round from every angle with nothing per-frame driving it), it
+   * rides the mesh and vanishes with it, the body's cosmetic tumble can't spin it
+   * because a sprite takes only position and scale off its world matrix, and
+   * weapon.js's non-recursive raycast means it can never be a hit target.
+   *
+   * What makes it read as a halo rather than a blob over the enemy is depth testing
+   * against the body it's centered on: the near facets hide the middle of the quad,
+   * so what's left is the part outside the silhouette. The aura is the *overhang* —
+   * which is why `haloScale` has to be over 1, and why the gradient puts its
+   * brightness in the outer half.
+   */
+  _halo(kind, isBoss) {
+    const sprite = new THREE.Sprite(isBoss ? BOSS_HALO_MATERIAL : HALO_MATERIAL);
+    // World units, like the portrait: diameter times the multiplier, so it shrinks
+    // with distance along with the body it surrounds.
+    const size = kind.radius * 2 * kind.glow.haloScale;
+    sprite.scale.set(size, size, 1);
+    return sprite;
   }
 
   /**

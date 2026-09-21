@@ -76,7 +76,19 @@ export const ENEMY = {
   // The 1/d² is worth keeping rather than flattening the decay: it's what holds the
   // light in a pool *under each enemy*, which is how a wave stays countable in the
   // dark. A flatter falloff at this intensity turns the whole floor red instead.
-  glow: { color: 0xff2410, intensity: 20, distance: 9 },
+  //
+  // `color` is shared by the light and the halo sprite around the body (enemies.js),
+  // which is the whole point of them living in one block: the thing an enemy casts
+  // on the floor and the thing burning around it are one glow, so one number. The
+  // halo's own two fields are its size as a multiple of the body's *diameter* — it
+  // has to be over 1 or there's no aura outside the silhouette — and how hard it
+  // burns, which is additive on a dark scene and washes out the facets over ~0.7.
+  //
+  // 2.2 puts the silhouette's edge on the halo texture's bright knee, which is what
+  // makes the aura hug the body: at 1.6 it's a thin rim light and at 2.8 it detaches
+  // into a fog bank with a rock inside it. See BOSS.glow — the boss holds the same
+  // number for that reason, not because the two tiers happen to want one size.
+  glow: { color: 0xff2410, intensity: 20, distance: 9, haloScale: 2.2, haloOpacity: 0.55 },
 };
 
 // The round boss. Every field ENEMY has, because enemies.js reads whichever of
@@ -118,7 +130,21 @@ export const BOSS = {
   // radius-3 orb, so nothing it lights is nearer than 3 units where a floater's
   // light works at 1.6, and 1/d² over that gap alone is ~4.5x. The rest is on top
   // because this one is the whole fight and should light the room it happens in.
-  glow: { color: 0xc23cff, intensity: 120, distance: 20 },
+  //
+  // `haloScale` matches a floater's, and matching is the point rather than a
+  // coincidence: the silhouette edge lands at 1/haloScale of the halo texture's
+  // radius, so that ratio is what decides where the body's edge falls on the
+  // gradient. At 2.2 it sits on the bright knee and the aura reads; the 1.5 this
+  // started at — picked because 1.5 units of overhang on a radius-3 orb is already
+  // twice a floater's 0.7 — put the edge out in the dim tail, and the boss ended up
+  // with a fainter aura than the floaters it towers over.
+  //
+  // Burning harder than a floater is the other half of that. One gradient stretched
+  // over five times the width falls off five times more gently in screen space, so
+  // the same opacity reads as haze rather than as a rim; 0.65 is what brings it back
+  // to looking like the orb is radiating. Going wider instead (2.6) doesn't — the
+  // aura stops belonging to the orb and just tints the wall behind it.
+  glow: { color: 0xc23cff, intensity: 120, distance: 20, haloScale: 2.2, haloOpacity: 0.65 },
   healthBarLift: 1.4, // world units above the boss's crown to float the bar
   // The portrait sprite plastered on the orb (see bosses.js), as a fraction of the
   // orb's *diameter*. Well under 1 on purpose: the ring of purple left around the
