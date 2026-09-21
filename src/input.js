@@ -1,6 +1,13 @@
+import { INPUT } from './config.js';
+
 // Raw input plumbing: pointer lock, held keys, and accumulated mouse movement.
 // This is deliberately gameplay-free — it reports what the hardware did and
 // lets player.js / weapon.js decide what it means.
+//
+// "What the hardware did" still means filtering what it plainly didn't do: see
+// the spike rejection in the mousemove handler. That's signal conditioning, not
+// gameplay meaning, and it has to happen here because it's only decidable
+// per-event — by the time player.js reads the accumulator the events are summed.
 
 export class Input {
   constructor(canvas) {
@@ -30,6 +37,17 @@ export class Input {
 
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.canvas;
+
+      // Drop whatever was accumulated but never read. player.js only consumes the
+      // accumulator while the game is running, so movement that lands after the
+      // last update() of a session — a flick that ends in the same breath as Esc —
+      // would otherwise sit here through the whole pause and be applied as one jump
+      // on resume. Cleared in both directions: on release because that input is
+      // stale, on acquire because anything queued before the first frame belongs to
+      // aiming the click, not to looking around.
+      this.mouseDX = 0;
+      this.mouseDY = 0;
+
       if (!this.locked) {
         // Dropping lock (Esc, alt-tab) should never leave keys or the trigger stuck.
         this.keys.clear();
@@ -40,6 +58,18 @@ export class Input {
 
     document.addEventListener('mousemove', (e) => {
       if (!this.locked) return;
+
+      // Reject the event whole if either axis is implausible. Under pointer lock
+      // the browser can hand back a movementX of half a screen width in a single
+      // event when the underlying cursor gets warped, which lands as the view
+      // teleporting to a new heading. Discarded rather than clamped: a spike is a
+      // bad reading, so the honest response is to have seen nothing, where
+      // clamping would still swing the view 50 degrees on made-up data. The cost
+      // is that a genuinely superhuman flick loses one event's worth of turn —
+      // cheap next to arriving at a heading you never aimed at.
+      if (Math.abs(e.movementX) > INPUT.maxLookDelta) return;
+      if (Math.abs(e.movementY) > INPUT.maxLookDelta) return;
+
       this.mouseDX += e.movementX;
       this.mouseDY += e.movementY;
     });

@@ -14,6 +14,20 @@ export const PLAYER = {
   radius: 0.4, // for wall collision
 };
 
+// Hardware-level input conditioning. Separate from PLAYER.lookSensitivity on
+// purpose: that number is *interpretation* (pixels to radians) and belongs to
+// player.js, while this one is noise rejection on the raw signal and belongs to
+// input.js. Different owners, different blocks.
+export const INPUT = {
+  // Ceiling on a single mousemove's movementX/movementY, in pixels. An event over
+  // this is discarded whole — see input.js. Chrome delivers at most one mousemove
+  // per frame, so one event is ~10ms of hand movement: at PLAYER.lookSensitivity
+  // 400px is a ~50 degree snap, already past what a human flick can produce in
+  // that time. Pointer-lock cursor warps come in at half a screen width or more
+  // (960px+ at 1920), so this sits with clear margin on both sides.
+  maxLookDelta: 400,
+};
+
 export const ENEMY = {
   speed: 2.2, // units per second, straight at the player
   radius: 0.6,
