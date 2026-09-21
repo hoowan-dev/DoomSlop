@@ -1,4 +1,5 @@
 import { ROUNDS } from './config.js';
+import { randomBoss } from './bosses.js';
 
 // The core loop, and the only module that knows what a "round" is:
 //
@@ -37,6 +38,9 @@ export class Rounds {
     this.round = 1;
     this.kills = 0;
     this.bossDown = false;
+    // Which boss is coming, from bosses.js. Null until one is drawn at the wipe;
+    // cleared here so a retry can't carry the dead run's boss into the next flash.
+    this.bossIdentity = null;
     // Speed first: setSpawning() derives the pending spawn timer from the current
     // multiplier, so re-enabling spawning before pushing round 1's scale would
     // open a retry with the dead run's compressed interval.
@@ -123,7 +127,10 @@ export class Rounds {
         // clear() — clear() would restart the difficulty ramp every round.
         this.enemies.removeAll();
         this.enemies.setSpawning(false);
-        this._enter('incoming', ROUNDS.bossDelay, 'BOSS ROUND');
+        // Drawn here rather than at the spawn a beat later, because the flash is
+        // what names it — the announcement is the introduction.
+        this.bossIdentity = randomBoss();
+        this._enter('incoming', ROUNDS.bossDelay, 'BOSS ROUND', this.bossIdentity.name);
         return;
 
       case 'incoming':
@@ -131,7 +138,7 @@ export class Rounds {
         // Cleared here rather than on spawn, so a stray flag can't end the fight
         // on the frame it starts.
         this.bossDown = false;
-        this.enemies.spawnBoss();
+        this.enemies.spawnBoss(this.bossIdentity);
         this.phase = 'boss';
         return;
 
@@ -157,9 +164,11 @@ export class Rounds {
   }
 
   /**
-   * @param sub optional second line for the flash. Kept out of `announcement`
-   *        rather than newline-joined, so the HUD can style the two lines
-   *        differently and BOSS ROUND can stay a single line.
+   * @param sub optional second line for the flash — the round's enemy speed on a
+   *        round flash, the boss's name on BOSS ROUND. Kept out of `announcement`
+   *        rather than newline-joined so the HUD can style the two lines
+   *        differently, which is also why the two callers can put unrelated text
+   *        there without the layout caring.
    */
   _enter(phase, duration, announcement, sub = null) {
     this.phase = phase;

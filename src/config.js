@@ -48,6 +48,11 @@ export const BOSS = {
   spin: 0.35, // a floater's tumble rate on something this big looks frantic
   scoreValue: 5000, // 50 shots, priced at a floater's 100 apiece
   healthBarLift: 1.4, // world units above the boss's crown to float the bar
+  // The portrait sprite plastered on the orb (see bosses.js), as a fraction of the
+  // orb's *diameter*. Well under 1 on purpose: the ring of purple left around the
+  // face is what still reads as the boss orb underneath it, and at 0.8 the face
+  // crowded the silhouette enough that the orb read as a frame rather than a body.
+  portraitScale: 0.6,
 };
 
 // The core loop: clear killsPerRound floaters, fight the boss, next round. See

@@ -112,10 +112,11 @@ body {
   letter-spacing: 0.24em;
 }
 
-/* The enemy speed under the round. Smaller and dimmer so the round number still
-   reads first, and laid out in normal flow under the title rather than pinned to
-   its own offset — the title's size is free to change without moving this. */
-#announce-speed {
+/* The line under the title: the round's enemy speed, or the boss's name on BOSS
+   ROUND. Smaller and dimmer so the title still reads first, and laid out in normal
+   flow under it rather than pinned to its own offset — the title's size is free to
+   change without moving this. */
+#announce-sub {
   margin-top: 10px;
   font-size: 19px;
   letter-spacing: 0.2em;

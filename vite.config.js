@@ -11,9 +11,12 @@ import { defineConfig } from 'vite';
 // a hardcoded base moves dev to http://localhost:5173/DoomSlop/ and every driver
 // starts navigating to a 404.
 //
-// Nothing else needs a base: the game loads no asset files at runtime (sounds are
-// synthesized, graphics are flat colors), so the only paths in the build are the
-// bundle and the stylesheet.
+// Nothing else needs configuring. The boss portraits are the only asset files the
+// game loads, and bosses.js reaches them with ES imports rather than literal
+// paths, so Vite emits them into the bundle's asset dir and rewrites the URLs
+// against this base for free. Fetching 'assets/images/x.png' by hand would skip
+// that and 404 under the Pages prefix. Sounds are synthesized and the rest of the
+// graphics are flat colors, so there's nothing else to route.
 export default defineConfig({
   base: './',
 });

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BOSS, ENEMY, PLAYER, WORLD } from './config.js';
+import { randomBoss } from './bosses.js';
 
 // Spawns and drives the floaters and the round boss. One shared geometry/material
 // per kind — with graphics this minimal there's no reason for per-enemy assets.
@@ -161,13 +162,19 @@ export class EnemyManager {
     return this._add(ENEMY, false);
   }
 
-  /** Called by rounds.js once the BOSS ROUND announcement has landed. */
-  spawnBoss() {
-    this.boss = this._add(BOSS, true);
+  /**
+   * Called by rounds.js once the BOSS ROUND announcement has landed.
+   *
+   * @param identity which boss it is, from bosses.js. Passed in because rounds.js
+   *        picks it a beat earlier — the BOSS ROUND flash names it before it
+   *        walks in. Defaults to a fresh pick so a bare spawnBoss() still works.
+   */
+  spawnBoss(identity = randomBoss()) {
+    this.boss = this._add(BOSS, true, identity);
     return this.boss;
   }
 
-  _add(kind, isBoss) {
+  _add(kind, isBoss, identity = null) {
     const mesh = new THREE.Mesh(
       isBoss ? BOSS_GEOMETRY : GEOMETRY,
       isBoss ? BOSS_MATERIAL : MATERIAL
@@ -175,16 +182,41 @@ export class EnemyManager {
     const { x, z } = this._spawnPoint(kind.spawnDistance, kind.radius);
     mesh.position.set(x, kind.hoverHeight, z);
 
+    if (identity) mesh.add(this._portrait(kind, identity));
+
     // Without this the mesh carries an identity matrixWorld until the next
     // render, and a raycast would treat it as sitting at the world origin —
-    // i.e. on top of the player.
+    // i.e. on top of the player. Recurses into the portrait, so it has to be
+    // parented above rather than after this.
     mesh.updateMatrixWorld();
 
     this.scene.add(mesh);
 
-    const enemy = { mesh, kind, isBoss, health: kind.health, cooldown: 0 };
+    const enemy = { mesh, kind, isBoss, identity, health: kind.health, cooldown: 0 };
     this.enemies.push(enemy);
     return enemy;
+  }
+
+  /**
+   * The boss's face, as a sprite parented to its orb. A sprite rather than a
+   * textured facet or a plane: it billboards, so the portrait faces the player
+   * from every angle without anything per-frame to drive it. Parented rather than
+   * tracked, so it rides the orb's movement and vanishes with it on removal —
+   * and the orb's cosmetic tumble can't spin it, since a sprite takes only
+   * position and scale off its world matrix.
+   *
+   * Never a hit target: weapon.js raycasts `hitboxes()` with recursion off, so the
+   * cast never descends into children. That flag is load-bearing now — with it on,
+   * a shot to the face would return the sprite, miss damage()'s `e.mesh === mesh`
+   * lookup, and leave the boss unkillable from the front.
+   */
+  _portrait(kind, identity) {
+    const sprite = new THREE.Sprite(identity.material);
+    // Scale is world units (sizeAttenuation is on), so it shrinks with distance
+    // like the orb it sits on. Diameter, not radius — hence the 2.
+    const size = kind.radius * 2 * kind.portraitScale;
+    sprite.scale.set(size, size, 1);
+    return sprite;
   }
 
   /**
