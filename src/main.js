@@ -67,6 +67,10 @@ const weapon = new Weapon(
     hud.shotFired(shot.hitEnemy);
     effects.tracer(shot.muzzle, shot.endpoint);
 
+    // The room lights up too, not just the streak. Same point the tracer starts
+    // from, which is under and ahead of the eye.
+    effects.muzzleFlash(shot.muzzle);
+
     // Sparks off the muzzle on every shot, sprayed forward.
     effects.burst(shot.muzzle, shot.direction, EFFECTS.muzzleSparks, EFFECTS.sparkColor);
 
@@ -180,6 +184,10 @@ function frame() {
   hud.update(player.health, score, rounds.label, rounds.progress);
   hud.updateBoss(enemies.boss);
   minimap.draw(player, enemies.enemies);
+  // The raw enemy array, like minimap.draw takes — hitboxes() would allocate one
+  // every frame. After enemies.update() so the glows sit where the meshes ended up,
+  // and before render() so the light positions are picked up this frame.
+  effects.updateGlows(enemies.enemies, player.position);
 
   renderer.render(scene, camera);
 }

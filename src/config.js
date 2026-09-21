@@ -67,6 +67,16 @@ export const ENEMY = {
   spawnHeightMax: 6,
   spin: 1, // multiplier on the cosmetic tumble rate
   scoreValue: 100,
+  // The point light that rides along with it (see effects.js). `intensity` is
+  // candela falling off as 1/d², so it only makes sense read against `radius` and
+  // `hoverHeight` — the floor under a floater is ~1.5 units from the light, where
+  // this lands as a pool of red a couple of units across. `distance` is where it
+  // reaches zero, i.e. how far that pool can spread at most.
+  //
+  // The 1/d² is worth keeping rather than flattening the decay: it's what holds the
+  // light in a pool *under each enemy*, which is how a wave stays countable in the
+  // dark. A flatter falloff at this intensity turns the whole floor red instead.
+  glow: { color: 0xff2410, intensity: 20, distance: 9 },
 };
 
 // The round boss. Every field ENEMY has, because enemies.js reads whichever of
@@ -102,6 +112,13 @@ export const BOSS = {
   spawnHeightMax: BOSS_HOVER,
   spin: 0.35, // a floater's tumble rate on something this big looks frantic
   scoreValue: 5000, // 50 shots, priced at a floater's 100 apiece
+  // Purple rather than a floater's red, for the same reason the orb is a different
+  // hue: the glow is one more thing saying which tier this is. Much brighter, and
+  // that part is geometry rather than taste — the light sits at the center of a
+  // radius-3 orb, so nothing it lights is nearer than 3 units where a floater's
+  // light works at 1.6, and 1/d² over that gap alone is ~4.5x. The rest is on top
+  // because this one is the whole fight and should light the room it happens in.
+  glow: { color: 0xc23cff, intensity: 120, distance: 20 },
   healthBarLift: 1.4, // world units above the boss's crown to float the bar
   // The portrait sprite plastered on the orb (see bosses.js), as a fraction of the
   // orb's *diameter*. Well under 1 on purpose: the ring of purple left around the
@@ -247,4 +264,28 @@ export const EFFECTS = {
   sparkColor: 0xffc978, // muzzle
   impactColor: 0xff7a4a, // enemy hits — warm, tinted toward the enemy color
   worldImpactColor: 0xc3d5ff, // floor/wall hits — cool and pale, reads as stone chips
+
+  // Dynamic point lights: a glow riding each enemy and a flash when the player
+  // shoots. The per-enemy color and reach are on ENEMY/BOSS instead of here,
+  // because they're read off `kind` like every other per-enemy tunable.
+  //
+  // A budget rather than one light per enemy. Every light in the scene is evaluated
+  // by every material for every fragment it covers — a late round's worth of them
+  // would be paid for across the whole floor — and the *count* is compiled into
+  // those shader programs, so spawning and killing enemies would rebuild every
+  // shader in the game mid-fight. The nearest `glowPool` enemies get one.
+  glowPool: 6,
+
+  muzzleFlash: {
+    color: 0xffd9a0, // the tracer's warm white
+    intensity: 14, // enough to visibly warm a floater 10 units out for a frame
+    distance: 18, // where it reaches zero — how much of the room the flash touches
+    // Deliberately not the physical 2. The muzzle sits ~0.4 units off the floor,
+    // and nearly on it when aiming down (see WEAPON.muzzleOffset.minHeight), where
+    // inverse-square puts a blown-out white spot at the barrel and leaves the rest
+    // of the room untouched. A flatter falloff reads as the place lighting up for a
+    // frame, which is the effect.
+    decay: 1.2,
+    life: 0.07, // seconds; under WEAPON.fireInterval, so two flashes can't overlap
+  },
 };

@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { EFFECTS } from './config.js';
 
-// Transient shot visuals: hitscan tracers and spark bursts. Everything here is
-// pooled and preallocated — effects fire several times a second, so allocating
-// geometry or Vector3s per shot would hand the GC steady work during play.
+// Shot visuals and the scene's dynamic lighting: hitscan tracers, spark bursts,
+// the glow that rides each enemy, and the flash when the player shoots. Everything
+// here is pooled and preallocated — effects fire several times a second, so
+// allocating geometry or Vector3s per shot would hand the GC steady work during
+// play, and the lights have a harder reason still (see _initLights).
 //
 // Owned by main.js, which ticks update() and calls clear() on restart. Weapon
 // stays out of it: it reports where a shot went, it doesn't draw.
@@ -16,6 +18,7 @@ export class Effects {
     this.scene = scene;
     this._initTracers();
     this._initParticles();
+    this._initLights();
   }
 
   _initTracers() {
@@ -87,6 +90,35 @@ export class Effects {
     this.scene.add(this.points);
   }
 
+  _initLights() {
+    // The glow pool: added to the scene once here and then never added, removed, or
+    // hidden. The number of lights in a scene is compiled into every material's
+    // shader program, so any of those three makes three.js rebuild all of them —
+    // and it would happen on every spawn and every kill, which is a hitch exactly
+    // when the fight is busiest. An unused slot idles at intensity 0 instead, which
+    // costs some per-fragment arithmetic and nothing else. `visible = false` would
+    // *not* do: the renderer drops a hidden light from the count.
+    this.glows = [];
+    for (let i = 0; i < EFFECTS.glowPool; i++) {
+      const light = new THREE.PointLight(0xffffff, 0, 1);
+      this.scene.add(light);
+      this.glows.push(light);
+    }
+
+    // Parallel slots for the nearest-first pick in updateGlows(). Preallocated for
+    // the usual reason: that runs over every live enemy every frame.
+    this._glowPicks = new Array(EFFECTS.glowPool).fill(null);
+    this._glowDists = new Float64Array(EFFECTS.glowPool);
+
+    // One light for the muzzle flash rather than a pool: its life is shorter than
+    // WEAPON.fireInterval, so two can never be alight at once.
+    const flash = EFFECTS.muzzleFlash;
+    this.flash = new THREE.PointLight(flash.color, 0, flash.distance, flash.decay);
+    this.flashLife = 0;
+    this.flashBorn = false;
+    this.scene.add(this.flash);
+  }
+
   /** A hitscan streak from `from` to `to`. */
   tracer(from, to) {
     // Round-robin: with a pool this size the oldest tracer has nearly always
@@ -146,9 +178,101 @@ export class Effects {
     }
   }
 
+  /**
+   * The light half of a shot: the room flashes for a moment from the muzzle. Pass
+   * the same point the tracer starts from — that's below and ahead of the eye, so
+   * the flash throws the floor and any near wall into relief instead of washing
+   * everything out evenly the way a light at the camera would.
+   */
+  muzzleFlash(origin) {
+    this.flash.position.copy(origin);
+    this.flash.intensity = EFFECTS.muzzleFlash.intensity;
+    this.flash.color.set(EFFECTS.muzzleFlash.color);
+    this.flash.distance = EFFECTS.muzzleFlash.distance;
+    this.flash.decay = EFFECTS.muzzleFlash.decay;
+    this.flashLife = EFFECTS.muzzleFlash.life;
+
+    // Same grace frame as a tracer: update() runs after the shot that spawned this,
+    // and the flash is shorter than a clamped worst-case frame, so without it a shot
+    // fired on a hitched frame would be dark before it ever rendered.
+    this.flashBorn = true;
+  }
+
+  /**
+   * Hands the glow pool to the enemies nearest `viewpoint` (the player's eye) and
+   * idles the spares. Nearest rather than first-come because the pool is smaller
+   * than a late round's field, and a distant enemy holding a light while one in the
+   * player's face has none is the one arrangement that would be obvious.
+   *
+   * Called from main.js outside the running check, alongside minimap.draw, so the
+   * arena keeps its glows behind the pause overlay instead of going flat.
+   */
+  updateGlows(enemies, viewpoint) {
+    const picks = this._glowPicks;
+    const dists = this._glowDists;
+    const pool = this.glows.length;
+    let count = 0;
+
+    // Insertion into a sorted window of fixed length: O(enemies * pool) and
+    // allocation-free, where mapping distances out and sorting them would hand the
+    // GC two arrays every frame.
+    for (const enemy of enemies) {
+      const distSq = enemy.mesh.position.distanceToSquared(viewpoint);
+      if (count === pool && distSq >= dists[count - 1]) continue;
+      if (count < pool) count++;
+
+      let i = count - 1; // the slot that just opened, or the far enemy being evicted
+      while (i > 0 && dists[i - 1] > distSq) {
+        dists[i] = dists[i - 1];
+        picks[i] = picks[i - 1];
+        i--;
+      }
+      dists[i] = distSq;
+      picks[i] = enemy;
+    }
+
+    for (let i = 0; i < pool; i++) {
+      const light = this.glows[i];
+      const enemy = picks[i];
+      // Dropped rather than left in place, so a slot can't hold a dead enemy's mesh
+      // alive until the next frame reassigns it.
+      picks[i] = null;
+
+      if (i >= count) {
+        light.intensity = 0;
+        continue;
+      }
+
+      // Color and reach come off `kind`, so the boss glows purple like its orb and
+      // a floater red — same rule as its speed, radius, and damage.
+      const glow = enemy.kind.glow;
+      light.position.copy(enemy.mesh.position);
+      light.color.set(glow.color);
+      light.distance = glow.distance;
+      light.intensity = glow.intensity;
+    }
+  }
+
   update(dt) {
     this._updateTracers(dt);
     this._updateParticles(dt);
+    this._updateFlash(dt);
+  }
+
+  _updateFlash(dt) {
+    if (this.flashLife <= 0) return;
+
+    if (this.flashBorn) {
+      this.flashBorn = false; // burn once at full intensity before decaying
+      return;
+    }
+
+    this.flashLife -= dt;
+    if (this.flashLife <= 0) {
+      this.flash.intensity = 0;
+      return;
+    }
+    this.flash.intensity = EFFECTS.muzzleFlash.intensity * (this.flashLife / EFFECTS.muzzleFlash.life);
   }
 
   _updateTracers(dt) {
@@ -224,5 +348,13 @@ export class Effects {
       slot.born = false;
       slot.line.visible = false;
     }
+
+    // Dark, never removed from the scene — see _initLights. The glows are reassigned
+    // from scratch before the next render anyway, but a restart shouldn't leave the
+    // dead run's last enemy lighting the floor if that call ever moves.
+    this.flashLife = 0;
+    this.flashBorn = false;
+    this.flash.intensity = 0;
+    for (const light of this.glows) light.intensity = 0;
   }
 }
