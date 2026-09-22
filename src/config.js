@@ -336,7 +336,7 @@ export const PICKUP = {
 
     // How long the buff runs, from the moment of collection. player.js counts it down
     // in update(), so it pauses with the game.
-    duration: 10,
+    duration: 15,
 
     // The multiplier, and it means move speed *and jump height* — not jump speed. The
     // apex is jumpSpeed^2 / (2 * gravity), so tripling the height means multiplying
@@ -594,12 +594,26 @@ export const EFFECTS = {
   // few: three on the floor at once is already a slow round.
   pickupGlowPool: 3,
 
+  // Enemy bodies are unlit, so the lights they *are* meant to read — the muzzle
+  // flash and the drops, never another enemy's glow — are evaluated on the CPU and
+  // added to the body color instead (see effects.js lightBodies). `gain` turns a
+  // light's candela into that added color and `max` caps the sum of them, or a
+  // point-blank flash would wash a floater to white.
+  //
+  // It needs a gain of its own rather than the candela the floor sees, because this
+  // term stands in for a per-fragment N·L that isn't there: it's flat across the
+  // body and then multiplied down by the facet bake. Both numbers were set by
+  // looking at the matched flash and drop pairs in doomslop-lighting.mjs — turn
+  // `gain` up and a shot reads as a camera flash on the enemy rather than a room
+  // lighting up around it.
+  bodyLight: { gain: 0.3, max: 1.1 },
+
   muzzleFlash: {
     color: 0xffd9a0, // the tracer's warm white
-    // Enough to throw the floor and a near wall into relief for a frame. It doesn't
-    // warm the enemies — their bodies read no lights at all (see enemies.js), which
-    // is the price of one enemy's glow not landing on the next. The drops still
-    // catch it.
+    // Enough to throw the floor, a near wall and the drops into relief for a frame.
+    // The enemies catch it too, but not off this number: their bodies read no lights
+    // at all (see enemies.js), so what they pick up is the bodyLight term above —
+    // the same falloff, with its own gain.
     intensity: 14,
     distance: 18, // where it reaches zero — how much of the room the flash touches
     // Deliberately not the physical 2. The muzzle sits ~0.4 units off the floor,

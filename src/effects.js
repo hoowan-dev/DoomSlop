@@ -13,6 +13,22 @@ import { EFFECTS } from './config.js';
 const SCRATCH = new THREE.Vector3();
 const TINT = new THREE.Color();
 
+/**
+ * three's point-light falloff, mirrored on the CPU for lightBodies(): candela over
+ * d^decay, windowed so it reaches zero at `distance` instead of being cut off. Same
+ * curve the fragment shader applies to the floor, so a body brightens on the same
+ * schedule as the ground under it — which is the only reason the two read as one
+ * light rather than as a light and a tint.
+ */
+function attenuation(distance, cutoff, decay) {
+  let falloff = 1 / Math.max(Math.pow(distance, decay), 0.01);
+  if (cutoff > 0) {
+    const window = Math.max(0, 1 - (distance / cutoff) ** 4);
+    falloff *= window * window;
+  }
+  return falloff;
+}
+
 export class Effects {
   constructor(scene) {
     this.scene = scene;
@@ -129,6 +145,12 @@ export class Effects {
     this.flashLife = 0;
     this.flashBorn = false;
     this.scene.add(this.flash);
+
+    // The lights an unlit body is allowed to read (see lightBodies) — the flash and
+    // the drops, and deliberately *not* this.glows: one enemy's glow landing on the
+    // next is the entire thing the unlit bodies exist to prevent. Built once from the
+    // two pools above, which are themselves fixed for the life of the scene.
+    this.bodyLights = [this.flash, ...this.pickupGlows];
   }
 
   /** A hitscan streak from `from` to `to`. */
@@ -224,6 +246,60 @@ export class Effects {
   updateGlows(enemies, pickups, viewpoint) {
     this._assignGlows(enemies, this.glows, this._glowPicks, this._glowDists, viewpoint);
     this._assignGlows(pickups, this.pickupGlows, this._pickupPicks, this._pickupDists, viewpoint);
+
+    // Last, and from in here rather than from main.js: it reads the pickup lights
+    // this pass just placed, so the order isn't something a caller should be able to
+    // get wrong. It's the same question as the two calls above — who lights what.
+    this.lightBodies(enemies);
+  }
+
+  /**
+   * The lighting the GPU can't do for us. Enemy bodies wear an unlit material so that
+   * one enemy's glow can't land on the next (see enemies.js) — which costs them every
+   * *other* light with it, including the flash going off in front of them and the drop
+   * they're floating over. So `bodyLights` is evaluated here instead, per enemy, and
+   * added to the body color that the facet bake multiplies.
+   *
+   * Flat across the body rather than per facet: one color write, and at a floater's
+   * ~30 screen pixels there is no near side to light. That approximation is also why
+   * the strength is EFFECTS.bodyLight.gain rather than the light's own candela.
+   *
+   * `items` need only carry a `mesh` and a `bodyColor` — the unlit base the material
+   * clone started from, read and never written. Idempotent: the term is rebuilt from
+   * that base every frame rather than accumulated onto the last one, so calling this
+   * twice in a frame is harmless and a light going out puts the body straight back.
+   */
+  lightBodies(items) {
+    const { gain, max } = EFFECTS.bodyLight;
+
+    for (const item of items) {
+      let r = 0;
+      let g = 0;
+      let b = 0;
+
+      for (const light of this.bodyLights) {
+        if (light.intensity <= 0) continue; // an idle pool slot, or no shot this frame
+        const d = light.position.distanceTo(item.mesh.position);
+        const strength = light.intensity * attenuation(d, light.distance, light.decay) * gain;
+        r += light.color.r * strength;
+        g += light.color.g * strength;
+        b += light.color.b * strength;
+      }
+
+      // Scaled back to the ceiling rather than clamped per channel: clamping shifts
+      // the hue as it bites, so a warm flash would arrive at white by way of losing
+      // its red first.
+      const peak = Math.max(r, g, b);
+      if (peak > max) {
+        const k = max / peak;
+        r *= k;
+        g *= k;
+        b *= k;
+      }
+
+      const base = item.bodyColor;
+      item.mesh.material.color.setRGB(base.r + r, base.g + g, base.b + b);
+    }
   }
 
   /**

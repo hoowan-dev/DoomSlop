@@ -79,8 +79,15 @@ const GEOMETRY = shaded(new THREE.IcosahedronGeometry(ENEMY.radius, 0));
  *
  * `vertexColors` is the facet shading that buys back (shaded() above); it
  * multiplies this color, so the brightest facet lands near what a Lambert body's
- * lit side read at. The muzzle flash no longer warms an enemy either — it lights
- * the floor, the walls and the drops, and that's the price.
+ * lit side read at.
+ *
+ * What being unlit would otherwise cost is every *other* light too — the muzzle flash
+ * going off in front of an enemy, the drop one is hovering over. Those are handed back
+ * by hand: each enemy wears a **clone** of this material (see _add) and
+ * effects.lightBodies() writes a CPU-evaluated light term into the clone's color every
+ * frame, from the flash and the drops only. That's the one asset here not shared per
+ * tier, and the reason is that a per-enemy dynamic color has nowhere else to live. This
+ * template's own color is the base that term is added to, and is never written.
  */
 const MATERIAL = new THREE.MeshBasicMaterial({ color: 0xc8503c, vertexColors: true });
 
@@ -272,10 +279,12 @@ export class EnemyManager {
   }
 
   _add(kind, isBoss, identity = null) {
-    const mesh = new THREE.Mesh(
-      isBoss ? BOSS_GEOMETRY : GEOMETRY,
-      isBoss ? BOSS_MATERIAL : MATERIAL
-    );
+    // The geometry is shared and the material is *not*: effects.lightBodies() writes
+    // the flash and the drops into each body's color every frame, which a shared
+    // material would apply to the whole tier at whichever enemy was written last.
+    // Disposed in remove().
+    const template = isBoss ? BOSS_MATERIAL : MATERIAL;
+    const mesh = new THREE.Mesh(isBoss ? BOSS_GEOMETRY : GEOMETRY, template.clone());
     const { x, z } = this._spawnPoint(kind.spawnDistance, kind.radius);
     // Mixed heights per spawn rather than one plane. `spawnDistance` stays the
     // *horizontal* distance — the height is on top of it, so a high spawn is
@@ -302,6 +311,10 @@ export class EnemyManager {
       identity,
       health: kind.health,
       cooldown: 0,
+      // The unlit base effects.lightBodies() adds its light term to. A reference to
+      // the tier template's color, so it costs nothing and can't drift from it —
+      // which also means it is read-only: writing it would retint the whole tier.
+      bodyColor: template.color,
       // Vertical units to shed per horizontal unit travelled — a slope, not a
       // speed. Tied to ground covered rather than to time so the settle finishes
       // on arrival at any `speedScale`: a round-8 floater crosses the arena four
@@ -403,6 +416,10 @@ export class EnemyManager {
     if (i === -1) return;
     this.enemies.splice(i, 1);
     this.scene.remove(enemy.mesh);
+    // The body material is a per-enemy clone (see _add), so it's ours to release —
+    // a run's worth of them would otherwise pile up in the renderer's program cache.
+    // The geometry and both sprite materials are shared and must not be touched.
+    enemy.mesh.material.dispose();
     if (enemy === this.boss) this.boss = null;
   }
 
