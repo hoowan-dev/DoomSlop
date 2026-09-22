@@ -27,6 +27,12 @@ export class Player {
     this.yaw = 0;
     this.pitch = 0;
 
+    // The strafe lean. A third camera angle, but unlike the two above it isn't an
+    // input the player aims with — it eases toward whatever the strafe keys ask for
+    // and back to level when they let go, so it's state rather than a reading. Kept
+    // here rather than in _roll() as a local for that reason.
+    this.roll = 0;
+
     // Vertical velocity, non-zero only during a jump. There's no horizontal
     // counterpart: walking is positional (no acceleration or inertia), so this is
     // the one axis that needs state carried between frames.
@@ -101,6 +107,7 @@ export class Player {
 
     this._look();
     this._walk(dt);
+    this._roll(dt);
     this._jump(dt);
     // Clamps X/Z only — the jump owns Y, and there's no ceiling to hit.
     this._clampToArena();
@@ -146,6 +153,36 @@ export class Player {
 
     this.position.x += dir.x;
     this.position.z += dir.z;
+  }
+
+  /**
+   * The strafe lean: the view rolls slightly into a sideways press and levels out
+   * when it's released. Purely cosmetic — roll is a rotation *about* the view axis,
+   * so forward is untouched and a shot goes exactly where the crosshair is. The
+   * muzzle does swing with it, because weapon.js takes its screen-space offset off
+   * the camera's own right/up columns, which is what keeps the tracer starting from
+   * the same spot on screen.
+   */
+  _roll(dt) {
+    // Read off the keys rather than off the movement achieved: walking is positional
+    // with no velocity to read, and a player strafing into a wall is still leaning.
+    // A+D together cancel, like they do in _walk().
+    const strafe = (this.input.isDown('KeyD') ? 1 : 0) - (this.input.isDown('KeyA') ? 1 : 0);
+
+    // Negative because camera roll is a right-handed rotation about the view
+    // direction, which is -Z: leaning *into* a press to the right means a negative
+    // angle. The sign is easy to talk yourself into either way — it was settled by
+    // strafing and looking at which way the horizon went.
+    const target = -strafe * PLAYER.strafeRoll;
+
+    // Eased rather than assigned. Snapping the horizon to a fixed tilt on the frame a
+    // key goes down reads as the camera being knocked, which is the opposite of the
+    // weight the lean is there to suggest — and the recovery matters more than the
+    // tilt-in, since releasing a strafe key stops the player dead. An exponential
+    // approach on a per-second rate, so both halves are the same shape and neither
+    // depends on the frame rate. Clamped at 1 so a long frame can't overshoot past
+    // the target and oscillate.
+    this.roll += (target - this.roll) * Math.min(1, PLAYER.strafeRollSpeed * dt);
   }
 
   /**
@@ -315,6 +352,9 @@ export class Player {
     this.position.set(0, PLAYER.eyeHeight, 0);
     this.yaw = 0;
     this.pitch = 0;
+    // Dying mid-strafe would otherwise open the retry with the horizon still tilted,
+    // and nothing would level it until the player strafed again.
+    this.roll = 0;
     // Dying mid-jump would otherwise carry that velocity into the retry, so the
     // new run opens still rising or still falling from the last one's hop.
     this.velocityY = 0;
@@ -329,6 +369,10 @@ export class Player {
     this.camera.position.copy(this.position);
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
+    // YXZ order puts Z first in the composition, i.e. innermost, so this is a roll
+    // about the already-aimed view axis rather than a third world-space turn. That's
+    // also why it can't disturb the pitch clamp above.
+    this.camera.rotation.z = this.roll;
 
     // Push the change into matrixWorld now rather than waiting for render().
     // weapon.js reads aim direction via camera.getWorldDirection(), which is

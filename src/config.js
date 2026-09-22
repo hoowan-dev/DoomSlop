@@ -32,6 +32,19 @@ export const PLAYER = {
   // this goes.
   jumpSpeed: 6.5, // initial upward velocity, units/sec
   gravity: 20, // units/sec^2
+
+  // The lean when strafing: the camera rolls a little into a sideways press and
+  // levels out when it's released (see player.js). Radians at a full press, so 0.045
+  // is 2.6 degrees — and it has to stay in that neighbourhood. This is the one place
+  // in the game where the *horizon* moves, so what's a lean at 3 degrees is a list at
+  // 8 and reads as the camera being loose rather than the player leaning. There's
+  // nothing to derive it from: it's a feel number, picked by strafing and looking.
+  strafeRoll: 0.045,
+  // How fast it eases in and out, as the rate of an exponential approach — roughly
+  // "most of the way there in 1/this seconds". Fast enough that a tap of A registers
+  // as a lean at all, slow enough that the horizon doesn't snap; the sharp stop is
+  // what the tilt itself was meant to soften.
+  strafeRollSpeed: 8,
 };
 
 // Hardware-level input conditioning. Separate from PLAYER.lookSensitivity on
