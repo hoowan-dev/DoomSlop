@@ -6,14 +6,89 @@ import { haloMaterial, haloSprite } from './glow.js';
 // Spawns and drives the floaters and the round boss. One shared geometry/material
 // per kind — with graphics this minimal there's no reason for per-enemy assets.
 
-const GEOMETRY = new THREE.IcosahedronGeometry(ENEMY.radius, 0);
-const MATERIAL = new THREE.MeshLambertMaterial({ color: 0xc8503c, flatShading: true });
+// The key light's direction in world.js, and the range of shade the two world
+// lights were putting on a Lambert body — the low end is a facet seeing only the
+// hemisphere's ground color, the high end one square to the key. Both matched by
+// looking, like every other appearance number in here. See shaded() below.
+const SHADE_DIR = new THREE.Vector3(1, 2, 1).normalize();
+const SHADE_MIN = 0.05;
+const SHADE_MAX = 0.52;
+
+/**
+ * Bakes a fixed-direction facet shade into a geometry's vertex colors.
+ *
+ * The bodies are unlit (see MATERIAL), which would otherwise cost them the facet
+ * shading the world lights gave them — an icosahedron lit by nothing is a flat
+ * hexagonal blob at any size, and the boss is a purple disc. A per-facet dot
+ * product against one direction is all that shading ever *was* here, and nothing
+ * in the arena moves the key light, so there's nothing to recompute per frame.
+ *
+ * What's given up is that the pattern rides the mesh's tumble rather than staying
+ * put in the world: a facet turning toward the light no longer brightens. At a
+ * floater's ~30 screen pixels that isn't visible, and on the boss the silhouette
+ * and the portrait carry the read.
+ */
+function shaded(geometry) {
+  // Every three vertices are one facet, and writing all three the same color is
+  // what makes the shading flat. PolyhedronGeometry is already non-indexed;
+  // guarded rather than assumed, since an indexed geometry shares vertices
+  // between facets and would smear the shade across them.
+  const geo = geometry.index ? geometry.toNonIndexed() : geometry;
+  const position = geo.attributes.position;
+  const colors = new Float32Array(position.count * 3);
+  const centroid = new THREE.Vector3();
+  const corner = new THREE.Vector3();
+
+  for (let i = 0; i < position.count; i += 3) {
+    centroid.set(0, 0, 0);
+    for (let v = 0; v < 3; v++) centroid.add(corner.fromBufferAttribute(position, i + v));
+    // The geometry is a convex polyhedron centred on the origin, so a facet's
+    // outward normal is the direction of its centroid. No cross product, and so
+    // no winding order to get the sign of.
+    centroid.normalize();
+
+    // Hemispheric rather than a bare dot: a facet facing away from the key still
+    // gets SHADE_MIN, the way the hemisphere light's ground color used to leave it
+    // dark rather than black.
+    const shade = SHADE_MIN + (SHADE_MAX - SHADE_MIN) * (0.5 + 0.5 * centroid.dot(SHADE_DIR));
+    for (let v = 0; v < 3; v++) {
+      const o = (i + v) * 3;
+      colors[o] = shade;
+      colors[o + 1] = shade;
+      colors[o + 2] = shade;
+    }
+  }
+
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
+
+const GEOMETRY = shaded(new THREE.IcosahedronGeometry(ENEMY.radius, 0));
+
+/**
+ * Enemy bodies are deliberately **unlit**, and that's what keeps one enemy's glow
+ * off its neighbours.
+ *
+ * three has no per-object light masking — `light.layers` is tested against the
+ * *camera*, not against the mesh — so the only way a body can be immune to the
+ * point lights riding every enemy around it is for its material not to read lights
+ * at all. Without that, a cluster lights each other's facets flat red while the one
+ * in the middle goes black, and a swarm stops being countable in exactly the
+ * situation the glows exist for. It gets worse with every light added to
+ * EFFECTS.glowPool and every unit added to ENEMY.glow.distance.
+ *
+ * `vertexColors` is the facet shading that buys back (shaded() above); it
+ * multiplies this color, so the brightest facet lands near what a Lambert body's
+ * lit side read at. The muzzle flash no longer warms an enemy either — it lights
+ * the floor, the walls and the drops, and that's the price.
+ */
+const MATERIAL = new THREE.MeshBasicMaterial({ color: 0xc8503c, vertexColors: true });
 
 // The boss gets its own pair rather than a scaled-up floater: at radius 3 the
 // floater's 20 facets read as a handful of flat slabs, and a different hue is
 // what makes it legible as a different tier of thing.
-const BOSS_GEOMETRY = new THREE.IcosahedronGeometry(BOSS.radius, 1);
-const BOSS_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x9b30c4, flatShading: true });
+const BOSS_GEOMETRY = shaded(new THREE.IcosahedronGeometry(BOSS.radius, 1));
+const BOSS_MATERIAL = new THREE.MeshBasicMaterial({ color: 0x9b30c4, vertexColors: true });
 
 // One halo material per tier over the one shared texture, same reasoning as the
 // shared geometry above. Both the texture and the material live in glow.js because

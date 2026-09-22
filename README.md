@@ -7,11 +7,19 @@ A minimal browser FPS built on [three.js](https://threejs.org/): enemies float t
 Requires [Node.js](https://nodejs.org/) 20 or newer (Vite 8's floor).
 
 ```bash
+./start.sh       # install if needed, serve http://localhost:5173/, open a browser on it
+```
+
+That's the whole setup. It's a wrapper around the npm scripts below, which still work on their own:
+
+```bash
 npm install
 npm run dev      # dev server with hot reload, serves http://localhost:5173/
 npm run build    # production bundle into dist/
 npm run preview  # serve the built bundle
 ```
+
+[start.sh](start.sh) pins the port rather than letting Vite pick the next free one, so the URL above is the URL you get or an error saying why not. Pass `--no-open` to leave the browser alone, and `Ctrl-C` to stop the server.
 
 The `dist/` JS bundle is ~570 kB (145 kB gzipped), nearly all of it three.js. Vite warns about the chunk size; for a single-screen game there's nothing worth code-splitting, so the warning is expected. The five boss portraits add ~2.7 MB of PNG alongside it, fetched in the background at load and long since decoded by the time a boss round arrives.
 

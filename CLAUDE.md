@@ -15,10 +15,13 @@ Not implemented (deliberately, not oversights): weapon variety, persistent high 
 ## Commands
 
 ```bash
+./start.sh       # install if needed, start the dev server, open a browser on it
 npm run dev      # Vite dev server on http://localhost:5173/, hot reload
 npm run build    # production bundle into dist/
 npm run preview  # serve the built bundle
 ```
+
+**`start.sh` is a wrapper around `npm run dev`, and the three things it adds are the three ways starting the game fails.** It applies the PATH fix below rather than leaving it to be remembered; it runs `npm install` only when `node_modules` is absent; and it passes `--strict-port`, so a taken 5173 is an error instead of Vite quietly moving to 5174 — where the game runs fine and every driver here, all of which hardcode 5173, is left talking to nothing. It also exits early when something is already serving the port, since that's the one case where doing nothing is right. `exec`s the server so Ctrl-C reaches Vite, and takes `--no-open` to skip the browser. Note it passes no `base`: the dev server has to stay at the root (see below).
 
 `assets/` holds every asset file in the repo: `images/` the boss portraits (one per `bosses.js` roster entry), `audio/doom.mp3` the music bed. They're reached with ES imports from `bosses.js` and `sound.js`, never literal paths, so Vite emits them into the bundle and rewrites the URLs against the base. That's why they don't need to live in `public/`, and it's the whole reason the deploy still works with assets in play.
 

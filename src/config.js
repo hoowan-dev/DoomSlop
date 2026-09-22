@@ -84,6 +84,18 @@ export const ENEMY = {
   // light in a pool *under each enemy*, which is how a wave stays countable in the
   // dark. A flatter falloff at this intensity turns the whole floor red instead.
   //
+  // `distance` is the reach, and 16 is the pool spread over most of the ground a
+  // floater is crossing rather than a puddle it carries under itself. Raising it
+  // brightens the *middle* distances as well as extending the edge — the cutoff is
+  // a window multiplied over the 1/d², so pulling it further out stops clipping the
+  // falloff early — which is why `intensity` only had to come up a little with it.
+  // What it costs is fill rate: this is the number that decides how much of the
+  // screen every light in EFFECTS.glowPool is evaluated over.
+  //
+  // None of it lands on another enemy. The bodies are unlit (see enemies.js), which
+  // is deliberate and load-bearing at this reach — a dozen lights carrying 16 units
+  // each would otherwise wash a whole cluster flat red.
+  //
   // `color` is shared by the light and the halo sprite around the body (enemies.js),
   // which is the whole point of them living in one block: the thing an enemy casts
   // on the floor and the thing burning around it are one glow, so one number. The
@@ -95,7 +107,7 @@ export const ENEMY = {
   // makes the aura hug the body: at 1.6 it's a thin rim light and at 2.8 it detaches
   // into a fog bank with a rock inside it. See BOSS.glow — the boss holds the same
   // number for that reason, not because the two tiers happen to want one size.
-  glow: { color: 0xff2410, intensity: 20, distance: 9, haloScale: 2.2, haloOpacity: 0.55 },
+  glow: { color: 0xff2410, intensity: 30, distance: 16, haloScale: 2.2, haloOpacity: 0.55 },
 };
 
 // The round boss. Every field ENEMY has, because enemies.js reads whichever of
@@ -151,7 +163,7 @@ export const BOSS = {
   // the same opacity reads as haze rather than as a rim; 0.65 is what brings it back
   // to looking like the orb is radiating. Going wider instead (2.6) doesn't — the
   // aura stops belonging to the orb and just tints the wall behind it.
-  glow: { color: 0xc23cff, intensity: 120, distance: 20, haloScale: 2.2, haloOpacity: 0.65 },
+  glow: { color: 0xc23cff, intensity: 180, distance: 34, haloScale: 2.2, haloOpacity: 0.65 },
   healthBarLift: 1.4, // world units above the boss's crown to float the bar
   // The portrait sprite plastered on the orb (see bosses.js), as a fraction of the
   // orb's *diameter*. Well under 1 on purpose: the ring of purple left around the
@@ -552,7 +564,13 @@ export const EFFECTS = {
   // would be paid for across the whole floor — and the *count* is compiled into
   // those shader programs, so spawning and killing enemies would rebuild every
   // shader in the game mid-fight. The nearest `glowPool` enemies get one.
-  glowPool: 6,
+  //
+  // 12 is most of a mid-round field, so a wave arrives lit rather than with the
+  // back half of it dark. This is the knob to turn down if a machine struggles:
+  // the cost is fill rate, not the count as such (see effects.js), so it's paid
+  // where the lit floor covers the screen — and it's paid *with* the reach on
+  // ENEMY.glow.distance, since a wider pool of light covers more fragments.
+  glowPool: 12,
 
   // A second, separate budget for the drops, rather than letting them into
   // the pool above. The pools have different jobs and different tenancy: an enemy's
@@ -565,7 +583,11 @@ export const EFFECTS = {
 
   muzzleFlash: {
     color: 0xffd9a0, // the tracer's warm white
-    intensity: 14, // enough to visibly warm a floater 10 units out for a frame
+    // Enough to throw the floor and a near wall into relief for a frame. It doesn't
+    // warm the enemies — their bodies read no lights at all (see enemies.js), which
+    // is the price of one enemy's glow not landing on the next. The drops still
+    // catch it.
+    intensity: 14,
     distance: 18, // where it reaches zero — how much of the room the flash touches
     // Deliberately not the physical 2. The muzzle sits ~0.4 units off the floor,
     // and nearly on it when aiming down (see WEAPON.muzzleOffset.minHeight), where
