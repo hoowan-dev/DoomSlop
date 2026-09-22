@@ -239,6 +239,14 @@ function frame() {
     // flash it queues flushes on this frame instead of the next.
     if (input.consumePress('Backquote')) rounds.skip();
 
+    // Music toggle, same shape as the skip above: input.js reports that a key went
+    // down and main.js is the only thing that knows M means music. The press edge
+    // and not isDown(), or one tap would toggle once per frame and land on whichever
+    // state the frame count happened to leave it in. Only drained while running, so
+    // like the skip it does nothing at the pause screen — presses are cleared when
+    // pointer lock drops, so a tap there can't fire on the frame after resume.
+    if (input.consumePress('KeyM')) sound.toggleMusic();
+
     player.update(dt);
     enemies.update(dt);
     weapon.update(dt, input.firing);
@@ -270,6 +278,12 @@ function frame() {
   // draining while the game is stopped.
   hud.updateBoost(player.boostTime, player.boostDuration);
   hud.updateBoss(enemies.boss);
+  // Outside the running check like the rest of the HUD, so the row reads correctly
+  // behind the pause overlay and on the start screen — which is where a player who
+  // hasn't noticed the game is silent will be looking for it. The sound system owns
+  // the state; this just reports it, and the HUD's own change cache means reading it
+  // every frame costs a comparison.
+  hud.updateMusic(sound.musicEnabled);
   // Both raw arrays, not hitboxes() — that allocates one per call, and this runs
   // every frame. Same two-array shape as updateGlows below, for the same reason.
   minimap.draw(player, enemies.enemies, pickups.pickups);

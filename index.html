@@ -80,11 +80,18 @@
         <span id="round">ROUND --</span>
         <span id="progress">KILLS --</span>
       </div>
-      <!-- Controls reference, top left. Static text like #build — no JS reads or
-           writes it, and it's the only list of the controls anywhere: the overlay
-           used to repeat the movement keys, which meant two copies to keep in
-           step. Visible during play and dimmed behind the pause overlay, so it
-           covers the start screen too. -->
+      <!-- Controls reference, top left. It's the only list of the controls anywhere:
+           the overlay used to repeat the movement keys, which meant two copies to
+           keep in step. Visible during play and dimmed behind the pause overlay, so
+           it covers the start screen too.
+
+           One row of it isn't static, unlike #build: the music row's action text is
+           written by hud.updateMusic() and reads MUSIC ON / MUSIC OFF. The state
+           belongs next to the key that changes it — the music starts off, so a
+           player noticing the silence and a player looking for the key to fix it are
+           the same person — and every other corner of the screen is occupied. It
+           starts as a placeholder for the same reason HP does: unwritten, it says so
+           rather than claiming a state. -->
       <div id="controls">
         <span class="key">WASD</span><span>MOVE</span>
         <span class="key">SPACE</span><span>JUMP</span>
@@ -92,6 +99,7 @@
         <span class="key">CLICK</span><span>SHOOT</span>
         <span class="key">ESC</span><span>PAUSE</span>
         <span class="key">~</span><span>SKIP ROUND</span>
+        <span class="key">M</span><span id="musicstate">MUSIC --</span>
       </div>
       <!-- Round and boss announcements. hud.js sets the text and retriggers the
            CSS animation. The flash lives on the wrapper so the title and the line
@@ -126,7 +134,7 @@
            through config.js and hud.js. Bump it by hand; this is the only place
            it appears. Kept out of package.json's `version` too, which is a semver
            for the package, not a build number for the game. -->
-      <div id="build">BUILD 1.13</div>
+      <div id="build">BUILD 1.14</div>
     </div>
 
     <!-- Click-to-start / paused overlay. Shown whenever the pointer is unlocked.

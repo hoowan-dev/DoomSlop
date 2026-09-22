@@ -511,6 +511,13 @@ export const SOUND = {
   // reads as the trim not working rather than as an error. sound.js clamps it and
   // the sound driver asserts the decoded buffer is longer than this.
   music: {
+    // Silent until the player asks for it with M. This is the *default*, not the
+    // live state — sound.toggleMusic() flips its own flag at runtime and never
+    // writes back here, like every other number in this file. Off because a bed
+    // that starts itself on the first click is the one sound most likely to be
+    // killed at the OS level and then never heard again; opting in also means the
+    // start screen is silent for anyone playing where they shouldn't be.
+    enabled: false,
     gain: 0.15,
     loopStart: 1, // 0:01 — skips the lead-in, and never plays it, not even once
     loopEnd: 94, // 1:34

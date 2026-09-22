@@ -37,6 +37,7 @@ export class Hud {
     this.vignetteEl = document.getElementById('vignette');
     this.bossBarEl = document.getElementById('bossbar');
     this.bossFillEl = document.getElementById('bossbar-fill');
+    this.musicEl = document.getElementById('musicstate');
 
     this._health = null;
     this._armor = null;
@@ -49,6 +50,7 @@ export class Hud {
     this._progress = undefined;
     this._bossFill = null;
     this._bossShown = false;
+    this._musicOn = null;
     this._hitTimer = null;
 
     this._buildPopups();
@@ -301,6 +303,30 @@ export class Hud {
     // with no CSS transition, for the same reason — see style.css.
     const fill = duration > 0 ? Math.max(0, Math.min(1, remaining / duration)) : 0;
     this.bootsFillEl.style.width = `${fill * 100}%`;
+  }
+
+  /**
+   * Whether the music is on, written into the M row of #controls — the one element
+   * in that panel JS touches, and the reason the row's action text carries an id
+   * where the other five are literals.
+   *
+   * It lives in the controls list rather than in a corner of its own for two
+   * reasons: every other corner is taken (radar, readout, vitals, build number),
+   * and a player wondering about the silence is asking one question — "is the music
+   * on, and what turns it on?" — which the key and the state answer together.
+   *
+   * Change-cached like the rest of the HUD, and it earns it more than most: this
+   * moves on a keypress, so the cache means a per-frame call costs one comparison.
+   */
+  updateMusic(enabled) {
+    if (enabled === this._musicOn) return;
+    this._musicOn = enabled;
+
+    this.musicEl.textContent = enabled ? 'MUSIC ON' : 'MUSIC OFF';
+    // Lit when on, dim with the rest of the panel when off — the state has to be
+    // readable at a glance from a row that's deliberately quiet, and brightness
+    // says "this one is active" without a second color to interpret.
+    this.musicEl.classList.toggle('on', enabled);
   }
 
   /**

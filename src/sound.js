@@ -29,6 +29,18 @@ export class Sound {
     this.noise = null;
     this._initialized = false;
     this._musicStarted = false;
+
+    // Whether the player wants music, as opposed to whether a source is currently
+    // playing (`musicSource`). The two differ for one frame either side of a
+    // toggle and for the whole of the first decode, which is why the intent is
+    // tracked separately — resume() consults this, not the node.
+    this.musicEnabled = SOUND.music.enabled;
+    // The decoded track, kept after the first successful decode so toggling the
+    // music back on doesn't refetch 2.4MB and decode it again.
+    this.musicBuffer = null;
+    // Incremented by every start and every stop, and checked after the decode
+    // await — see _startMusic().
+    this._musicGen = 0;
   }
 
   /**
@@ -43,8 +55,27 @@ export class Sound {
     }
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
     // After the resume, so the source isn't scheduled against a suspended clock.
-    // Idempotent — see _startMusic(); every click after the first is a no-op.
-    this._startMusic();
+    // Gated on the player having asked for music: the bed is off by default, so a
+    // start click is silent until M says otherwise. Still idempotent when it is on
+    // — see _startMusic() — so resuming from a pause can't restart the track.
+    if (this.musicEnabled) this._startMusic();
+  }
+
+  /**
+   * The M key, via main.js. Returns the new state, which main.js hands to the HUD:
+   * this module owns whether music is playing and the HUD only reports it.
+   *
+   * Turning it on starts the loop from the top rather than picking up where the
+   * last stop left off. That's what was asked for, and it's also the only cheap
+   * option — an AudioBufferSourceNode can't be paused, only stopped, and a stopped
+   * one is spent, so "off" is a dead node whatever we do and "on" is always a
+   * fresh one.
+   */
+  toggleMusic() {
+    this.musicEnabled = !this.musicEnabled;
+    if (this.musicEnabled) this._startMusic();
+    else this._stopMusic();
+    return this.musicEnabled;
   }
 
   _init() {
@@ -77,20 +108,24 @@ export class Sound {
   }
 
   /**
-   * Starts the looping music bed, once, and then never touches it again — there is
-   * deliberately no stop(), no restart and no seek anywhere in the codebase. That
-   * absence *is* the implementation of "keeps playing through a pause, a round
-   * change, a death and a retry": nothing in the game can reach the source, and
-   * pausing only stops main.js's frame loop, which the AudioContext's own clock
-   * doesn't depend on. Anyone adding audio teardown to a reset path should expect
-   * to break that.
+   * Starts the looping music bed from the top of its loop window. Idempotent: a
+   * second call while a source is playing is a no-op, which is what keeps every
+   * overlay click after the first from restarting the track.
+   *
+   * **The music toggle is the only thing in the codebase that stops or restarts
+   * this.** Pause, round changes, death and retry still can't reach it — they don't
+   * touch the source, and pausing only stops main.js's frame loop, which the
+   * AudioContext's own clock doesn't depend on. So the bed still plays through all
+   * of them; what changed is that M is now a deliberate exception rather than there
+   * being no exception at all. Adding audio teardown to a *reset* path still breaks
+   * that property, and the sound driver still asserts it.
    *
    * The loop window is a segment of the track rather than the whole file, which is
    * why this is an AudioBufferSourceNode and not an <audio> element: loopStart /
    * loopEnd are sample-accurate and gapless, where seeking an element from a
    * timeupdate handler is quantized to ~250ms and audibly stutters at the seam.
-   * The cost is decoding the whole file up front, which is a few hundred ms on one
-   * click, once.
+   * The cost is decoding the whole file, which is a few hundred ms — paid once and
+   * then cached, since a toggle mustn't stutter the frame it lands on.
    *
    * The guard is set *before* the await rather than after. Two clicks in quick
    * succession would both land while the decode is in flight, and the second source
@@ -101,10 +136,18 @@ export class Sound {
     if (this._musicStarted || !this.ctx) return;
     this._musicStarted = true;
 
-    fetch(MUSIC_URL)
-      .then((res) => res.arrayBuffer())
-      .then((bytes) => this.ctx.decodeAudioData(bytes))
+    // The guard above covers two starts; this covers a start and a *stop*. Toggling
+    // off — or off and straight back on — while the first decode is in flight would
+    // otherwise land a source the player has already switched off, and since a spent
+    // node can't be reused, the one after it would play over the top of it. The
+    // generation says "this start has been superseded"; only the current one gets to
+    // create a node.
+    const gen = ++this._musicGen;
+
+    this._decode()
       .then((buffer) => {
+        if (gen !== this._musicGen) return;
+
         const src = this.ctx.createBufferSource();
         src.buffer = buffer;
         src.loop = true;
@@ -122,11 +165,51 @@ export class Sound {
       })
       .catch((err) => {
         // Music failing must not take the effects down with it. Releasing the guard
-        // lets the next overlay click retry, and the warning is the only signal a
-        // missing or undecodable file would otherwise give — the drivers treat
-        // console warnings as failures, which is the right outcome here.
+        // lets the next overlay click — or the next toggle — retry, and the warning
+        // is the only signal a missing or undecodable file would otherwise give; the
+        // drivers treat console warnings as failures, which is the right outcome
+        // here.
         this._musicStarted = false;
         console.warn('music failed to start:', err);
+      });
+  }
+
+  /**
+   * Silences the bed and spends its source. There's nothing to keep: the spec has
+   * no pause for a source node and a stopped one can't be restarted, so the next
+   * toggle-on builds a new node from the top of the loop — which is what makes
+   * "starts from the beginning" the behaviour rather than a choice.
+   *
+   * The decoded buffer deliberately survives this. It's the expensive part, it can
+   * be shared by any number of sources, and holding it is what keeps a toggle off
+   * the network.
+   */
+  _stopMusic() {
+    // Released first, so a start landing after this one is a real start. Bumping the
+    // generation also cancels a decode still in flight — see _startMusic().
+    this._musicStarted = false;
+    this._musicGen++;
+
+    if (!this.musicSource) return;
+    this.musicSource.stop();
+    this.musicSource.disconnect();
+    this.musicSource = null;
+  }
+
+  /**
+   * The fetch and decode, memoized. Only the first toggle pays for it; every one
+   * after reuses the buffer, because a keypress mid-fight can't afford to hit the
+   * network and decode 2.4MB before the music comes back.
+   */
+  _decode() {
+    if (this.musicBuffer) return Promise.resolve(this.musicBuffer);
+
+    return fetch(MUSIC_URL)
+      .then((res) => res.arrayBuffer())
+      .then((bytes) => this.ctx.decodeAudioData(bytes))
+      .then((buffer) => {
+        this.musicBuffer = buffer;
+        return buffer;
       });
   }
 

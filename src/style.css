@@ -549,6 +549,14 @@ body {
   color: rgba(226, 232, 245, 0.72);
 }
 
+/* The music row's state, the one thing in this panel hud.js writes. Lit to the
+   keys' brightness while the music is on and left at the panel's dim default when
+   it's off, so the difference is legible from a row that's deliberately quiet
+   without introducing a color that would have to mean something. */
+#controls #musicstate.on {
+  color: rgba(226, 232, 245, 0.72);
+}
+
 /* Build number, opposite corner from #readout and deliberately quieter than it:
    smaller and dimmed, because it's provenance rather than something you read
    while playing. Its text is a literal in index.html — no JS writes it. */
