@@ -6,6 +6,57 @@ export const WORLD = {
   wallHeight: 8,
 };
 
+// Two squares of wall that lead to each other: walk into one and you come out of the
+// other, facing into the arena. Re-picked at the start of every round (rounds.js), so
+// the shortcut across the map is something to find each round rather than a fixture.
+// Sized and placed against WORLD above, which is why it sits next to it.
+export const PORTAL = {
+  // The doorway, in world units — a square standing on the floor, `size` wide and
+  // `size` tall. Wide enough to hit at a run, and short enough against a
+  // WORLD.wallHeight of 8 to read as a door in a wall rather than as a painted wall.
+  size: 3,
+
+  // How close to the wall counts as stepping through, measured straight out from the
+  // wall plane. It has to clear the gap the arena clamp leaves — the player stops
+  // PLAYER.radius short of every wall, so anything under 0.4 could never fire at all —
+  // and it's well over that so a portal takes at a run instead of needing to be
+  // leaned into.
+  depth: 1.2,
+
+  // How far into the arena the player arrives, measured from the exit wall. **Must
+  // stay above `depth`**, or arriving would immediately count as stepping into the
+  // exit portal and the player would ping-pong between the two. That constraint is
+  // what stands in for a cooldown: there is no travel state anywhere, because
+  // coming out beyond the trigger is enough. A constraint noted here rather than a
+  // clamp in code, same as the speed ladder's ceiling.
+  exitOffset: 2.4,
+
+  // Keep a portal's center this far from the corners. The aura spreads
+  // size * glow.haloScale / 2 either side of it, so this is what keeps the glow on one
+  // wall instead of being cut in half by the one beside it.
+  margin: 5,
+
+  // How far the light stands off the wall. A point light *in* the wall's own plane
+  // lights it at grazing incidence and reads as nothing at all, so it has to be out
+  // in the room to wash the surface it's mounted on — and standing off is also what
+  // spills it onto the floor in front, which is the part you see from across the map.
+  lightOffset: 0.9,
+
+  // Blue, pushed toward cyan: PICKUP.armor already owns azure, and by the note on
+  // PICKUP.boots the palette had run out of free hues. This is the deliberate bend of
+  // that rule, and it's affordable because the two are never told apart by color in
+  // the first place — one is a 3-unit square standing in a wall, the other a small
+  // cube bobbing at knee height, and nothing that matters follows from mistaking them.
+  //
+  // Read exactly like an enemy's or a drop's glow, by the same code: one block for the
+  // light and the aura so the pair can't drift apart. `haloScale` is the aura's size as
+  // a multiple of `size` and has to stay over 1 for the reason it does there — the glow
+  // is the part outside the square. `intensity` is candela at 1/d^2 against a wall
+  // `lightOffset` away and a floor about size/2 below the light, which is why it's
+  // nearer a drop's number than the boss's despite lighting a far bigger area.
+  glow: { color: 0x35e0ff, intensity: 22, distance: 14, haloScale: 2.2, haloOpacity: 0.7 },
+};
+
 export const PLAYER = {
   eyeHeight: 1.7, // also the resting camera height, i.e. the ground for a jump
   moveSpeed: 7, // units per second
@@ -596,17 +647,29 @@ export const EFFECTS = {
 
   // Enemy bodies are unlit, so the lights they *are* meant to read — the muzzle
   // flash and the drops, never another enemy's glow — are evaluated on the CPU and
-  // added to the body color instead (see effects.js lightBodies). `gain` turns a
+  // added to the body color instead (see effects.js lightBodies). A gain turns a
   // light's candela into that added color and `max` caps the sum of them, or a
   // point-blank flash would wash a floater to white.
   //
   // It needs a gain of its own rather than the candela the floor sees, because this
   // term stands in for a per-fragment N·L that isn't there: it's flat across the
-  // body and then multiplied down by the facet bake. Both numbers were set by
-  // looking at the matched flash and drop pairs in doomslop-lighting.mjs — turn
-  // `gain` up and a shot reads as a camera flash on the enemy rather than a room
-  // lighting up around it.
-  bodyLight: { gain: 0.3, max: 1.1 },
+  // body and then multiplied down by the facet bake.
+  //
+  // **Two gains rather than one, and the split is the numbers being honest about what
+  // they were each set against.** A drop's candela is aimed at a floor one unit under
+  // it at inverse-square, where the flash's is aimed across a room at a decay of 1.2 —
+  // so at the same distance one gain over both makes the drop term about four times
+  // the flash's. The term is also added in three's *linear* working space, where a
+  // floater's base is (0.58, 0.08, 0.05): a green term of 0.6 doesn't tint that body,
+  // it replaces it, and a floater passing a health cube comes out olive. Reading as a
+  // red enemy the cube is lighting — rather than as a green one — is the whole point,
+  // and it's also what keeps yellow the boots' hue and nothing else's.
+  //
+  // All three were set by looking at the matched flash and drop pairs in
+  // doomslop-lighting.mjs. Turn `flashGain` up and a shot reads as a camera flash on
+  // the enemy rather than a room lighting up around it; turn `dropGain` up and the
+  // body stops being red before the cube is close enough to matter.
+  bodyLight: { flashGain: 0.3, dropGain: 0.08, max: 1.1 },
 
   muzzleFlash: {
     color: 0xffd9a0, // the tracer's warm white

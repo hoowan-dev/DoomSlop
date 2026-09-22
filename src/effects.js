@@ -262,7 +262,9 @@ export class Effects {
    *
    * Flat across the body rather than per facet: one color write, and at a floater's
    * ~30 screen pixels there is no near side to light. That approximation is also why
-   * the strength is EFFECTS.bodyLight.gain rather than the light's own candela.
+   * the strength is an EFFECTS.bodyLight gain rather than the light's own candela —
+   * and why there are two of them, one per kind of light, since a drop's candela and
+   * the flash's were each set against their own geometry (see config.js).
    *
    * `items` need only carry a `mesh` and a `bodyColor` — the unlit base the material
    * clone started from, read and never written. Idempotent: the term is rebuilt from
@@ -270,7 +272,7 @@ export class Effects {
    * twice in a frame is harmless and a light going out puts the body straight back.
    */
   lightBodies(items) {
-    const { gain, max } = EFFECTS.bodyLight;
+    const { flashGain, dropGain, max } = EFFECTS.bodyLight;
 
     for (const item of items) {
       let r = 0;
@@ -280,6 +282,11 @@ export class Effects {
       for (const light of this.bodyLights) {
         if (light.intensity <= 0) continue; // an idle pool slot, or no shot this frame
         const d = light.position.distanceTo(item.mesh.position);
+        // Which of the two gains applies is the one thing this loop can't treat
+        // uniformly: the pool slots are drops and the odd one out is the flash. Taken
+        // off identity rather than stored per light so a driver retuning either number
+        // through config still moves it, the same as everything else here.
+        const gain = light === this.flash ? flashGain : dropGain;
         const strength = light.intensity * attenuation(d, light.distance, light.decay) * gain;
         r += light.color.r * strength;
         g += light.color.g * strength;

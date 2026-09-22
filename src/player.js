@@ -237,6 +237,33 @@ export class Player {
     }
   }
 
+  /**
+   * Put the player somewhere else, turning the view with them. The one mover that
+   * isn't _walk(): portals.js calls it when the player steps into a portal.
+   *
+   * X and Z only, because _jump() owns Y — so walking into a portal mid-hop comes out
+   * mid-hop, at the same height and with the same velocity. Nothing about the jump is
+   * interrupted, which is the reading that matches the traversal being planar.
+   *
+   * @param turn *added* to yaw rather than assigned. The caller works out the
+   *        difference between the two walls (see portals.js), so whatever the player
+   *        was looking at relative to the wall they walked into is preserved relative
+   *        to the one they come out of. Assigning the exit's heading instead would
+   *        snap the view flat to the wall and throw away the aim they had.
+   *
+   * Syncs the camera itself, and that isn't optional: this runs after update() in the
+   * frame, so without it weapon.js would raycast from the position the player left —
+   * see the matrixWorld invariant in CLAUDE.md.
+   */
+  teleport(x, z, turn) {
+    this.position.x = x;
+    this.position.z = z;
+    // Same wrap _look() applies, for the same reason: a long run through portals
+    // shouldn't walk yaw off toward float imprecision.
+    this.yaw = (this.yaw + turn) % (Math.PI * 2);
+    this._syncCamera();
+  }
+
   _clampToArena() {
     // Walls are at the raw bounds; inset by the player's radius so the camera
     // stops before it can see through them.

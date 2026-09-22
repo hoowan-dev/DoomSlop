@@ -10,6 +10,7 @@ import { Sound } from './sound.js';
 import { Hud } from './hud.js';
 import { Minimap } from './minimap.js';
 import { Rounds } from './rounds.js';
+import { Portals } from './portals.js';
 import { EFFECTS, PICKUP } from './config.js';
 import * as config from './config.js';
 
@@ -32,6 +33,11 @@ const minimap = new Minimap(camera);
 let score = 0;
 const enemies = new EnemyManager(scene, player);
 const pickups = new PickupManager(scene, player);
+// Before Effects rather than after for no reason at all *except* one: both add lights
+// to the scene at construction, and the count they add up to is what gets compiled
+// into every material's shader. Either order is fine as long as both happen before the
+// first render, which is the actual invariant (see effects.js).
+const portals = new Portals(scene, player);
 const effects = new Effects(scene);
 const sound = new Sound();
 
@@ -86,7 +92,7 @@ pickups.onCollect = (pickup) => {
 // The round loop. It drives enemies (wiping the field, gating spawns, summoning
 // the boss) and the player (refilling health after a boss), and reports its
 // announcements back out — so it needs them, but nothing needs it.
-const rounds = new Rounds(enemies, player, (text, sub) => hud.announce(text, sub));
+const rounds = new Rounds(enemies, player, portals, (text, sub) => hud.announce(text, sub));
 
 // Damage originates in enemies.js, which never sees main.js — the hook is how
 // feedback for a hit gets attached without enemies or the player knowing about the
@@ -248,6 +254,11 @@ function frame() {
     if (input.consumePress('KeyM')) sound.toggleMusic();
 
     player.update(dt);
+    // Straight after the move that could have walked into one, and before everything
+    // that reads where the player is: the enemies steer at the position they came out
+    // at, the weapon fires from it, and the drop under the exit is collectable on the
+    // same frame. It takes no dt — a traversal is a position test, not a timer.
+    portals.update();
     enemies.update(dt);
     weapon.update(dt, input.firing);
     // After weapon.update, so a drop rolled by a kill this frame is on the floor and
@@ -311,6 +322,7 @@ if (import.meta.env.DEV) {
     hud,
     minimap,
     rounds,
+    portals,
     input,
     // Live-tweakable: the config objects are read at use time, so changing a
     // value here takes effect on the next frame. Handy for balancing by hand.

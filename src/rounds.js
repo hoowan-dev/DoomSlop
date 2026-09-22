@@ -23,13 +23,19 @@ export class Rounds {
    *        directly rather than routed through a callback, matching
    *        EnemyManager — it already holds the player and calls takeDamage(),
    *        so a gameplay system moving health is the established shape here.
+   * @param portals moved to two new walls at every round start. Held for the same
+   *        reason the enemies are and for the opposite reason pickups aren't: a
+   *        round change *must* re-place the portals, where it must not be able to
+   *        sweep the drops (see pickups.js), so this one belongs on the round
+   *        machine and that one deliberately doesn't.
    * @param onAnnounce (text, sub) => void — main.js routes this to
    *        hud.announce(). Rounds has no DOM access, matching every other
    *        system here.
    */
-  constructor(enemies, player, onAnnounce) {
+  constructor(enemies, player, portals, onAnnounce) {
     this.enemies = enemies;
     this.player = player;
+    this.portals = portals;
     this.onAnnounce = onAnnounce;
     this.reset();
   }
@@ -49,13 +55,16 @@ export class Rounds {
   }
 
   /**
-   * Begin a round: push its speed to the enemies and queue its flash. Both entry
-   * points go through here — a restart from reset(), and the boss dying — so they
-   * can't drift. A retry that reads round 1 while the floaters keep round 7's
-   * speed is the bug this exists to prevent.
+   * Begin a round: push its speed to the enemies, put the portals somewhere new, and
+   * queue its flash. Every entry point goes through here — a restart from reset(), the
+   * boss dying, and the ~ skip — so they can't drift. A retry that reads round 1 while
+   * the floaters keep round 7's speed is the bug this exists to prevent, and the
+   * portals join it for the same reason: "at the start of each round" has to mean all
+   * three of those, including a skipped one.
    */
   _startRound(phase, duration) {
     this.enemies.setSpeedScale(this.speedScale);
+    this.portals.place();
     this._enter(phase, duration, `ROUND ${this.round}`, this.speedLabel);
   }
 
