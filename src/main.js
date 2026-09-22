@@ -10,7 +10,7 @@ import { Sound } from './sound.js';
 import { Hud } from './hud.js';
 import { Minimap } from './minimap.js';
 import { Rounds } from './rounds.js';
-import { EFFECTS } from './config.js';
+import { EFFECTS, PICKUP } from './config.js';
 import * as config from './config.js';
 
 // Bootstrap + game loop. Everything else hangs off here.
@@ -35,18 +35,36 @@ const pickups = new PickupManager(scene, player);
 const effects = new Effects(scene);
 const sound = new Sound();
 
-// What a health drop does. All three parts of it are here rather than in
-// pickups.js, which knows only that an item was taken: healing is the player's,
-// the sound is sound.js's, and the message is the HUD's. Same shape as the kill
-// hook below — the manager reports, main.js decides what it means.
-pickups.onCollect = () => {
+// What a drop does. Every part of it is here rather than in pickups.js, which knows
+// only that an item was taken: the pools are the player's, the sound is sound.js's,
+// and the message is the HUD's. Same shape as the kill hook below — the manager
+// reports, main.js decides what it means.
+//
+// Which item it was comes off `pickup.kind`, the same pointer-at-a-config-block an
+// enemy carries. This branch *is* the drop table's semantics, and it's the whole of
+// what a second item type costs: everything about being a floating, bobbing,
+// expiring, collectable cube is already shared.
+pickups.onCollect = (pickup) => {
+  if (pickup.kind === PICKUP.armor) {
+    // "+50 AP, capped at 50" is a refill from any starting value, so it's the same
+    // all-or-nothing shape as the heal below. The blue flash is raised here rather
+    // than from a player.onArmor hook because this is armor's only source — onHeal
+    // exists to cover two callers (a medkit and a boss dying), and there's no second
+    // one to cover here.
+    player.refillArmor();
+    sound.itemPickup();
+    hud.notice('AP RESTORED', 'armor');
+    hud.vignette('armor');
+    return;
+  }
+
   // The same all-or-nothing refill a boss kill pays out. Deliberately reused rather
   // than a partial heal: nothing in the game restores a fraction of the bar.
   // The green vignette is deliberately *not* here: it hangs off player.onHeal
   // below, so the refill after a boss dies flashes it too without rounds.js
   // needing to know the HUD exists.
   player.refillHealth();
-  sound.healthPickup();
+  sound.itemPickup();
   hud.notice('HP RESTORED');
 };
 
@@ -230,7 +248,7 @@ function frame() {
 
   // Outside the running check, like the HUD: these stay drawn while paused
   // instead of going blank behind the overlay.
-  hud.update(player.health, score, rounds.label, rounds.progress);
+  hud.update(player.health, player.armor, score, rounds.label, rounds.progress);
   hud.updateBoss(enemies.boss);
   // Both raw arrays, not hitboxes() — that allocates one per call, and this runs
   // every frame. Same two-array shape as updateGlows below, for the same reason.

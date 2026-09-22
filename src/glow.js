@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 // The halo: the soft aura burning around anything in the scene that carries a
-// glow — every enemy (enemies.js) and every health drop (pickups.js).
+// glow — every enemy (enemies.js) and every drop (pickups.js).
 //
 // It lives in its own module because both of those need the *same* texture. One
 // CanvasTexture is shared by every halo in the game, with the per-thing color
@@ -48,7 +48,8 @@ export const HALO_TEXTURE = (() => {
  * reasoning as the shared geometry in enemies.js. Callers build theirs at module
  * scope and hand it to every sprite they make.
  *
- * @param glow a `glow` block from config.js (ENEMY.glow, BOSS.glow, PICKUP.glow).
+ * @param glow a `glow` block from config.js (ENEMY.glow, BOSS.glow, or one off a
+ *        PICKUP face — PICKUP.health.glow / PICKUP.armor.glow).
  *        `color` is the same field the point light in effects.js reads, so the aura
  *        and the light it casts can't drift apart.
  *

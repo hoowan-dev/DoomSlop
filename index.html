@@ -15,8 +15,8 @@
 
     <!-- Crosshair + readouts. Text is filled in by src/hud.js. -->
     <div id="hud" aria-hidden="true">
-      <!-- Damage / heal vignette: a tint pulsing in from the edges of the view,
-           red when the player is hit and green when they pick health up. hud.js
+      <!-- Damage / pickup vignette: a tint pulsing in from the edges of the view,
+           red when the player is hit, green for health and blue for armor. hud.js
            swaps the color class and retriggers the animation; like #notice and
            #muzzle its whole duration lives in style.css, since nothing waits on
            it. First in the HUD on purpose — later siblings paint over earlier
@@ -31,13 +31,33 @@
       <!-- Muzzle flash: a warm glow at the bottom of the screen, since there's
            no weapon model to flash. hud.js retriggers its CSS animation. -->
       <div id="muzzle"></div>
-      <!-- Health, bottom center and much larger than the rest of the readout. On
-           its own rather than in #readout because it's the one number that decides
-           whether to break off and go find a medkit, so it sits where the eye
-           already is — under the crosshair — at a size you can read without
-           looking away from what's shooting at you. After #muzzle in the source so
-           the flash glows behind it rather than over it. -->
-      <div id="health">HP --</div>
+      <!-- Vitals, bottom center: two bars, each with its number under it. On their
+           own rather than in #readout because these are what decide whether to break
+           off and go find a drop, so they sit where the eye already is — under the
+           crosshair — and can be read without looking away from what's shooting at
+           you. After #muzzle in the source so the flash glows behind them rather
+           than over them.
+
+           One stack (#vitals) rather than four absolutely positioned elements: each
+           bar sits above its text in normal flow, so either font size can change
+           without re-deriving an offset — the same arrangement #announce-sub has
+           under #announce-title. The stack is anchored at the *bottom*, so it grows
+           upward and #health stays put as things are added above it. hud.js writes
+           the two fills' widths and the two numbers; everything else is style.css.
+
+           The bars carry the read and the numbers are matched labels on them, which
+           is why HP and AP are the same size as each other and differ only in color.
+           Armor is the pair on top because it's the buffer in front of the health
+           below it, so it reads as sitting in the way of the damage. Always drawn,
+           even at AP 0 — an empty bar is accurate where #progress's frozen 25/25
+           would have been misleading, and a pair that appeared and vanished would be
+           movement right where the player's eye rests under fire. -->
+      <div id="vitals">
+        <div id="armorbar"><div id="armorbar-fill"></div></div>
+        <div id="armor">AP --</div>
+        <div id="healthbar"><div id="healthbar-fill"></div></div>
+        <div id="health">HP --</div>
+      </div>
       <div id="readout">
         <span id="score">SCORE --</span>
         <span id="round">ROUND --</span>
@@ -65,7 +85,8 @@
         <div id="announce-title"></div>
         <div id="announce-sub"></div>
       </div>
-      <!-- Pickup notice, lower center: "HP RESTORED" when a health drop is taken.
+      <!-- Pickup notice, lower center: "HP RESTORED" or "AP RESTORED" when a drop is
+           taken, tinted to match the item that was collected.
            hud.js writes the text and retriggers the CSS animation, the same dance as
            #announce — and like the muzzle flash, its duration lives in style.css and
            nowhere else. #announce's 1.2s has to be kept in step with ROUNDS.bossDelay
@@ -88,7 +109,7 @@
            through config.js and hud.js. Bump it by hand; this is the only place
            it appears. Kept out of package.json's `version` too, which is a semver
            for the package, not a build number for the game. -->
-      <div id="build">BUILD 1.08</div>
+      <div id="build">BUILD 1.11</div>
     </div>
 
     <!-- Click-to-start / paused overlay. Shown whenever the pointer is unlocked.

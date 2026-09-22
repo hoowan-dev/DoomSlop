@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { HITMARK, POPUP } from './config.js';
+import { HITMARK, PLAYER, POPUP } from './config.js';
 
 // The HUD is plain DOM on top of the canvas — cheaper and easier to style than
 // anything drawn in the scene.
@@ -18,6 +18,9 @@ export class Hud {
     this.camera = camera;
 
     this.healthEl = document.getElementById('health');
+    this.healthFillEl = document.getElementById('healthbar-fill');
+    this.armorEl = document.getElementById('armor');
+    this.armorFillEl = document.getElementById('armorbar-fill');
     this.scoreEl = document.getElementById('score');
     this.roundEl = document.getElementById('round');
     this.progressEl = document.getElementById('progress');
@@ -33,6 +36,7 @@ export class Hud {
     this.bossFillEl = document.getElementById('bossbar-fill');
 
     this._health = null;
+    this._armor = null;
     this._score = null;
     this._round = null;
     // undefined, not null: null is a real value for progress (it means "hide
@@ -86,20 +90,28 @@ export class Hud {
   }
 
   /**
-   * A one-line message under the crosshair: "HP RESTORED" when a health drop is
-   * taken. Separate from announce() rather than a third argument to it — that one
-   * owns the center of the screen and is driven by the round machine, which times
+   * A one-line message under the crosshair: "HP RESTORED" or "AP RESTORED" when a
+   * drop is taken. Separate from announce() rather than a third argument to it — that
+   * one owns the center of the screen and is driven by the round machine, which times
    * ROUNDS.bossDelay against its animation. This has no such coupling, and nothing
    * waits on it, so its whole duration is the CSS.
+   *
+   * @param kind 'heal' or 'armor', doubling as the CSS class that colors it, exactly
+   *        as vignette()'s argument does — so there's no mapping table here to keep in
+   *        step with the stylesheet. Tinted rather than left one color because the
+   *        vignette that goes up with it is the item's color, and a green message
+   *        under a blue flash reads as two unrelated events.
    */
-  notice(text) {
+  notice(text, kind = 'heal') {
     this.noticeEl.textContent = text;
 
     // Same retrigger dance as the announcement and the muzzle flash: without the
     // reflow between, a second pickup inside the animation window wouldn't replay it.
-    this.noticeEl.classList.remove('flash');
+    // The tint comes off with it, so back-to-back drops of different kinds can't leave
+    // one message wearing the other's color.
+    this.noticeEl.classList.remove('flash', 'heal', 'armor');
     void this.noticeEl.offsetWidth;
-    this.noticeEl.classList.add('flash');
+    this.noticeEl.classList.add(kind, 'flash');
   }
 
   /**
@@ -158,18 +170,19 @@ export class Hud {
 
   /**
    * Full-screen tint pulsing in from the edges: red on taking a hit, green on
-   * collecting health. One element and one animation for both, with the color
-   * swapped by the class — they're the same event shape ("your health just
-   * changed, look at the bar") pointing in opposite directions, and splitting
-   * them into two overlays would let the two fades drift apart.
+   * collecting health, blue on collecting armor. One element and one animation for
+   * all three, with the color swapped by the class — they're the same event shape
+   * ("what you can survive just changed, look at the bars") pointing in different
+   * directions, and splitting them into an overlay each would let the fades drift
+   * apart.
    *
-   * @param kind 'damage' or 'heal'. Doubles as the CSS class, so there's no
+   * @param kind 'damage', 'heal' or 'armor'. Doubles as the CSS class, so there's no
    *        mapping table to keep in step with the stylesheet.
    */
   vignette(kind) {
     // The tint classes come off with the animation: a heal landing inside a
     // damage flash has to replace its color, not sit on top of it.
-    this.vignetteEl.classList.remove('flash', 'damage', 'heal');
+    this.vignetteEl.classList.remove('flash', 'damage', 'heal', 'armor');
     void this.vignetteEl.offsetWidth;
     this.vignetteEl.classList.add(kind, 'flash');
   }
@@ -192,15 +205,21 @@ export class Hud {
   }
 
   /**
+   * @param armor the player's AP. Sits next to `health` in the signature because
+   *        they're the same kind of thing drawn the same way — see `_vital()`.
    * @param round already-formatted text from `rounds.label`.
    * @param progress already-formatted text from `rounds.progress`, or null to
    *        hide the field entirely (the boss fight has nothing to count).
    */
-  update(health, score, round, progress) {
+  update(health, armor, score, round, progress) {
     // Only touch the DOM when a value actually changed.
     if (health !== this._health) {
-      this.healthEl.textContent = `HP ${health}`;
+      this._vital(this.healthEl, this.healthFillEl, 'HP', health, PLAYER.maxHealth);
       this._health = health;
+    }
+    if (armor !== this._armor) {
+      this._vital(this.armorEl, this.armorFillEl, 'AP', armor, PLAYER.maxArmor);
+      this._armor = armor;
     }
     if (score !== this._score) {
       this.scoreEl.textContent = `SCORE ${score}`;
@@ -215,6 +234,26 @@ export class Hud {
       this.progressEl.classList.toggle('hidden', progress === null);
       this._progress = progress;
     }
+  }
+
+  /**
+   * One of the two bottom-center pools: the number and the bar under `#vitals`.
+   *
+   * Both are written together, off the caller's single change check, rather than each
+   * tracking its own — they're two views of one value and must not be able to
+   * disagree. The fraction is clamped even though takeDamage() already floors both
+   * pools at 0, because they're also written directly (player.reset(), and the
+   * drivers), and CSS ignores a negative width outright: the bar would sit at
+   * whatever it last was rather than emptying.
+   *
+   * One helper for both pools rather than two copies, because "a number over a bar"
+   * is the whole of what either one is — a third pool would be a third call, not more
+   * code here.
+   */
+  _vital(labelEl, fillEl, label, value, max) {
+    labelEl.textContent = `${label} ${value}`;
+    const fill = Math.max(0, Math.min(1, value / max));
+    fillEl.style.width = `${fill * 100}%`;
   }
 
   /**

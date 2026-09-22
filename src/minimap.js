@@ -1,4 +1,4 @@
-import { MINIMAP } from './config.js';
+import { MINIMAP, PICKUP } from './config.js';
 
 // Top-down radar in the corner of the HUD. Drawn on its own 2D canvas rather
 // than in the scene — three.js never sees it, matching the rest of the HUD.
@@ -142,41 +142,87 @@ export class Minimap {
   }
 
   /**
-   * Health drops, as small upright crosses. Placement is identical to the enemy
-   * dots' — the same single ctx.rotate(player.yaw) with raw world offsets plotted
-   * into it, which is the one thing about this canvas that's easy to get subtly
-   * wrong and the thing the minimap driver actually measures.
+   * Drops, as small upright icons: a cross for health, a shield for armor. The same
+   * two symbols painted on the cubes themselves, which is what ties a blip to the
+   * thing you walk over to collect — neither is a dot, because both dots on this
+   * canvas are things trying to kill you.
    *
-   * The per-item counter-rotation is what keeps the cross *upright* while the map
-   * turns under it. The dots don't need it because a circle is rotation-invariant;
-   * a cross left in the rotated frame would lean over into an X at most headings and
-   * stop reading as the symbol painted on the cube.
+   * Placement is identical to the enemy dots' — the same single ctx.rotate(player.yaw)
+   * with raw world offsets plotted into it, which is the one thing about this canvas
+   * that's easy to get subtly wrong and the thing the minimap driver actually
+   * measures.
+   *
+   * The per-item counter-rotation is what keeps each icon *upright* while the map
+   * turns under it. The dots don't need it because a circle is rotation-invariant; a
+   * cross left in the rotated frame leans over into an X at most headings, and a
+   * shield hanging sideways stops reading as a shield at all.
+   *
+   * Which icon is decided by comparing `kind` against the config blocks rather than
+   * by a shape name stored in one: how a shield is drawn belongs to the thing drawing
+   * it, and config.js holds the color and the size.
    */
   _drawPickups(ctx, scale, player, pickups) {
     const rangeSq = MINIMAP.range * MINIMAP.range;
-    const arm = MINIMAP.pickupArm;
 
     ctx.save();
     ctx.rotate(player.yaw);
-    ctx.fillStyle = MINIMAP.pickupColor;
 
     for (const item of pickups) {
       const dx = item.mesh.position.x - player.position.x;
       const dz = item.mesh.position.z - player.position.z;
       if (dx * dx + dz * dz > rangeSq) continue;
 
+      const armor = item.kind === PICKUP.armor;
+
       ctx.save();
       ctx.translate(dx * scale, dz * scale);
       ctx.rotate(-player.yaw);
-      // Two overlapping bars rather than a stroked path: the arms are a couple of
-      // pixels wide, where a lineWidth that small lands between device pixels and
-      // comes out grey.
-      ctx.fillRect(-arm, -MINIMAP.pickupThickness / 2, arm * 2, MINIMAP.pickupThickness);
-      ctx.fillRect(-MINIMAP.pickupThickness / 2, -arm, MINIMAP.pickupThickness, arm * 2);
+      ctx.fillStyle = armor ? MINIMAP.armorColor : MINIMAP.healthColor;
+      if (armor) this._shield(ctx, MINIMAP.armorArm);
+      else this._cross(ctx, MINIMAP.healthArm, MINIMAP.healthThickness);
       ctx.restore();
     }
 
     ctx.restore();
+  }
+
+  /**
+   * Two overlapping bars rather than a stroked path: the arms are a couple of pixels
+   * wide, where a lineWidth that small lands between device pixels and comes out grey.
+   */
+  _cross(ctx, arm, thickness) {
+    ctx.fillRect(-arm, -thickness / 2, arm * 2, thickness);
+    ctx.fillRect(-thickness / 2, -arm, thickness, arm * 2);
+  }
+
+  /**
+   * The armor shield, centered on the origin and filled. Same silhouette as the one
+   * painted on the cube (pickups.js) — flat top, straight shoulders, curving to a
+   * point — and the proportions live here with it for the same reason: they're the
+   * shape rather than a tunable. Filled rather than outlined because at 6 pixels
+   * across an outline closes up into a smudge.
+   *
+   * Taller than it is wide, which is what separates it from the round dots at a
+   * glance even before the color does.
+   */
+  _shield(ctx, arm) {
+    const top = -arm * 1.15;
+    const bottom = arm * 1.5;
+    const waist = arm * 0.25;
+    // Above the bottom edge rather than level with it, so the two sides converge to a
+    // point instead of meeting in a flat curve — see drawShield() in pickups.js, where
+    // the same construction is drawn ten times the size and the difference is the
+    // whole read of the icon.
+    const pull = arm * 0.6;
+
+    ctx.beginPath();
+    ctx.moveTo(-arm, top);
+    ctx.lineTo(arm, top);
+    ctx.lineTo(arm, waist);
+    ctx.quadraticCurveTo(arm, pull, 0, bottom);
+    ctx.quadraticCurveTo(-arm, pull, -arm, waist);
+    ctx.closePath();
+    ctx.fill();
   }
 
   /** The player: always dead center, since the map moves and they don't. */

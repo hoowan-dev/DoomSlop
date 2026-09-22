@@ -152,7 +152,10 @@ export class Sound {
   }
 
   /**
-   * Collecting a health drop: a short choir chord that swells instead of cracking.
+   * Collecting a drop, either kind: a short choir chord that swells instead of
+   * cracking. One sound for both items rather than one each — the notice, the vignette
+   * and the bar that fills all say *which* item it was, where a second chord would
+   * only say it again in the one channel that can't be glanced at.
    *
    * Eight sine voices — a major triad plus the octave, each doubled a few cents
    * either side of pitch. The doubling is the whole trick: the pairs beat slowly
@@ -160,7 +163,7 @@ export class Sound {
    * several people rather than one organ pipe. They enter low to high so the chord
    * blooms upward rather than landing as a block.
    */
-  healthPickup() {
+  itemPickup() {
     const s = SOUND.pickup;
     s.ratios.forEach((ratio, i) => {
       for (const detune of [-s.detune, s.detune]) {

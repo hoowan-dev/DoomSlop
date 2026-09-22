@@ -110,7 +110,7 @@ export class Effects {
     this._glowPicks = new Array(EFFECTS.glowPool).fill(null);
     this._glowDists = new Float64Array(EFFECTS.glowPool);
 
-    // A second pool for the health drops, with its own budget so a drop lying on the
+    // A second pool for the drops, with its own budget so a drop lying on the
     // floor can't take a light off an enemy closing on the player. Same fixed-count
     // rule applies — these are added here, once, and dimmed rather than removed.
     this.pickupGlows = [];
@@ -270,7 +270,8 @@ export class Effects {
       }
 
       // Color and reach come off `kind`, so the boss glows purple like its orb, a
-      // floater red and a health drop green — same rule as speed, radius and damage.
+      // floater red, a health drop green and an armor drop blue — same rule as speed,
+      // radius and damage, and the reason this one function serves both pools.
       const glow = item.kind.glow;
       light.position.copy(item.mesh.position);
       light.color.set(glow.color);

@@ -11,6 +11,13 @@ export const PLAYER = {
   moveSpeed: 7, // units per second
   lookSensitivity: 0.0022, // radians per pixel of mouse movement
   maxHealth: 100,
+  // Armor points: a second pool that soaks damage before health does (see
+  // player.js). Starts at zero and is only ever filled by an armor drop, so unlike
+  // maxHealth this is a ceiling the player spends most of the game below — and one
+  // a floater's 25-point touch eats in two hits, which is the point. It's here
+  // rather than in PICKUP because it's the *player's* capacity; the drop that fills
+  // it is one of several things that could.
+  maxArmor: 50,
   radius: 0.4, // for wall collision
 
   // The jump, and the only vertical motion in the game. These two fully determine
@@ -104,18 +111,13 @@ export const BOSS = {
   speed: 1.3, // slower than a floater, and outrunnable until ROUNDS.speedStep carries it past PLAYER.moveSpeed (round 10 as shipped)
   radius: 3,
   health: 50, // shots to kill
-  touchDamage: 20,
+  touchDamage: 25,
   // Unlike a floater the boss isn't consumed when it reaches the player — it has
   // to be shot down. Without a cooldown it would land a hit every frame and
   // erase a full health bar in a fraction of a second.
   attackInterval: 1.2,
   // Must stay below arenaSize/2 - radius, or every bearing is out of bounds and
-  // _spawnPoint() falls through to its center-ward fallback on every attempt.
-  spawnDistance: 20,
-  hoverHeight: BOSS_HOVER,
-  // The boss deliberately doesn't get the floaters' height variety: its entrance
-  // is staged — named by the flash, alone in a wiped arena — and a radius-3 orb
-  // arriving at a random altitude reads as a glitch rather than as variety. There's
+  // _spawnPoint() falls through to its center-ward fallbackw
   // barely room for it anyway, between its radius and WORLD.wallHeight. Both ends
   // equal to hoverHeight makes the settle in enemies.js a no-op for this tier.
   // Present as real fields rather than omitted because every enemy reads its
@@ -177,20 +179,38 @@ export const ROUNDS = {
   speedStep: 0.5,
 };
 
-// The drop system: what a dead enemy leaves behind. One item so far — a health
-// cube that refills the bar — so this is both "the drop table" and "that item's
-// block. A second drop type would split it in two, with `dropChance` staying here
-// and per-item fields moving down.
+// The drop system: what a dead enemy leaves behind. Everything from `dropChance`
+// down to `shrinkTime` is the *system* — there is one drop shape and every item
+// shares it — and the two blocks at the bottom are its two faces: the health cube
+// and the armor cube.
 //
-// Colors here are CSS strings rather than the 0x literals the rest of this file
-// uses, like MINIMAP's: the cross is drawn into a canvas with the 2D API (see
-// pickups.js), not handed to a three.js material.
+// A drop's `kind` points at one of those faces, exactly as an enemy's points at
+// ENEMY or BOSS, which is what lets effects.js read `item.kind.glow` without
+// knowing which it was handed. Same rule as those two blocks: a new per-face field
+// has to be added to *both*, or one of them is an undefined that silently means 0.
+// What deliberately *isn't* duplicated down there is the physics — size, reach,
+// hover height, bob, spin, life. The two items are one cube with a different
+// picture on it, and giving armor its own radius or bob speed would be inventing a
+// difference the game doesn't have.
+//
+// Colors in the faces are CSS strings rather than the 0x literals the rest of this
+// file uses, like MINIMAP's: the icon is drawn into a canvas with the 2D API (see
+// pickups.js), not handed to a three.js material. `glow.color` is a 0x literal
+// because that one does go to a three light and material, so the faces carry both
+// conventions on purpose.
 export const PICKUP = {
   // Chance a defeated enemy drops one. Rolled per *shot* kill only — the roll hangs
   // off enemies.onDefeat, which never fires for a contact death or a between-rounds
   // sweep, so suiciding floaters and the round wipe can't pay out. At 0.15 against
   // ROUNDS.killsPerRound that's between three and four a round.
   dropChance: 0.15,
+  // Of the drops that do happen, the share that come up armor rather than health.
+  // A minority on purpose: health is what gets the player out of trouble they're
+  // already in, where armor is a buffer against trouble they haven't met yet, so a
+  // table weighted the other way would mostly hand shields to a player at 20 HP.
+  // A second roll after dropChance rather than a chance of its own, so the overall
+  // drop rate stays the one number above.
+  armorShare: 0.35,
 
   size: 0.8, // cube edge, in world units — a little smaller than a floater's 1.2 across
   radius: 0.6, // collection radius; the player walks over it at this plus PLAYER.radius
@@ -217,20 +237,44 @@ export const PICKUP = {
   // within a frame of the cube.
   shrinkTime: 1.2,
 
-  bodyColor: '#e9f1ea', // the box: near-white, so the cross is what you see
-  crossColor: '#27c953',
-  edgeColor: '#9fb3a4', // a painted-on border, so the cube's faces read apart
+  // The health cube: refills the bar outright. `iconColor` is the cross painted on
+  // every face — named for the job rather than the shape, since the armor face below
+  // paints a shield through the same field.
+  health: {
+    bodyColor: '#e9f1ea', // the box: near-white, so the icon is what you see
+    iconColor: '#27c953',
+    edgeColor: '#9fb3a4', // a painted-on border, so the cube's faces read apart
 
-  // Green, and the one green light in the game: the enemies are red and the boss is
-  // purple, so color alone says "this one is for you". Same two halves as an enemy's
-  // glow — the point light in effects.js and the halo in glow.js — and the same
-  // reason they share a block.
-  //
-  // Dimmer than a floater's 20 despite reading as bright, which is 1/d²: this hovers
-  // at 1 unit where a floater sits at 1.6, so the floor under it is 2.5x closer to
-  // the light. `haloScale` matches the enemies' 2.2 for the reason spelled out in
-  // BOSS.glow — that ratio, not the world size, is what decides how the aura reads.
-  glow: { color: 0x2bff6a, intensity: 9, distance: 7, haloScale: 2.2, haloOpacity: 0.6 },
+    // Green, and the one green light in the game bar the armor blue below: the
+    // enemies are red and the boss is purple, so color alone says "this one is for
+    // you". Same two halves as an enemy's glow — the point light in effects.js and
+    // the halo in glow.js — and the same reason they share a block.
+    //
+    // Dimmer than a floater's 20 despite reading as bright, which is 1/d²: this
+    // hovers at 1 unit where a floater sits at 1.6, so the floor under it is 2.5x
+    // closer to the light. `haloScale` matches the enemies' 2.2 for the reason
+    // spelled out in BOSS.glow — that ratio, not the world size, is what decides
+    // how the aura reads.
+    glow: { color: 0x2bff6a, intensity: 9, distance: 7, haloScale: 2.2, haloOpacity: 0.6 },
+  },
+
+  // The armor cube: fills PLAYER.maxArmor, which then soaks damage ahead of health.
+  // A shield instead of a cross, on a cooler body, because the two are the same
+  // object at a glance otherwise — and the blue has to survive being seen inside its
+  // own glow, which is why the body is tinted toward it rather than left the health
+  // cube's near-white.
+  armor: {
+    bodyColor: '#e5ecf6',
+    iconColor: '#1f6fd0',
+    edgeColor: '#98a6bd',
+
+    // Blue: the fourth and last hue in the game, and the only one that isn't a
+    // threat or a heal. Slightly hotter than the health cube's 9 at the same
+    // distance, because blue at equal candela reads dimmer than green against a dark
+    // floor — the two drops should look equally *present* from across the arena,
+    // which is a matter of what the eye does rather than of what the number says.
+    glow: { color: 0x2f8bff, intensity: 11, distance: 7, haloScale: 2.2, haloOpacity: 0.6 },
+  },
 };
 
 export const WEAPON = {
@@ -274,16 +318,24 @@ export const MINIMAP = {
   bossColor: '#b957d9',
   bossRadius: 6,
 
-  // Health drops. Drawn as a small cross rather than a third color of dot: the two
-  // dots on here are both things trying to kill you, and the one thing on the map
-  // that isn't shouldn't be told apart by hue alone. It's the same cross that's
-  // painted on the cube (PICKUP.crossColor), which is what ties the blip to the
-  // object you go and stand on. `arm` is the half-length of each stroke and
-  // `thickness` its width, both in CSS pixels — it is not a radius, so it doesn't
-  // share the naming of the dots above.
-  pickupColor: '#3ddc6a',
-  pickupArm: 3.4,
-  pickupThickness: 1.8,
+  // Drops. Neither is a dot, and that's the rule rather than a style choice: both
+  // dots above are things trying to kill you, so the things on the map that aren't
+  // shouldn't be told apart from them by hue alone. Each blip is the same icon
+  // that's painted on its cube (PICKUP.health/armor iconColor), which is what ties
+  // it to the object you go and stand on — a cross for health, a shield for armor.
+  //
+  // Hence the naming: `arm` is the half-length of a cross stroke and `thickness` its
+  // width, `armorArm` the shield's half-width. None of them is a radius, so none
+  // shares the dots' naming. The shield's proportions are in minimap.js with the
+  // cube's icon proportions, since they're the shape rather than a tunable.
+  healthColor: '#3ddc6a',
+  healthArm: 3.4,
+  healthThickness: 1.8,
+  // A touch narrower than the cross's arm: the shield is a filled shape where the
+  // cross is two strokes, so matching their extents would leave it much the heavier
+  // of the two.
+  armorColor: '#4aa8ff',
+  armorArm: 3,
 };
 
 // Floating "+100" over a kill. Timing lives here rather than in a CSS animation
@@ -354,7 +406,7 @@ export const SOUND = {
     pitchHigh: 880,
   },
 
-  // Collecting a health drop: a short choir chord, and the one sound here with no
+  // Collecting a drop of either kind: a short choir chord, and the one sound here with no
   // noise layer and no pitch sweep. Everything else in the game is percussive —
   // cracks, blips, hits — so a chord that *swells* is the only one that could read
   // as a blessing rather than as another event.
@@ -431,7 +483,7 @@ export const EFFECTS = {
   // shader in the game mid-fight. The nearest `glowPool` enemies get one.
   glowPool: 6,
 
-  // A second, separate budget for the health drops, rather than letting them into
+  // A second, separate budget for the drops, rather than letting them into
   // the pool above. The pools have different jobs and different tenancy: an enemy's
   // light is there to make a closing threat countable, while a drop just lies on the
   // floor — and lies there for PICKUP.life. On a shared pool two drops near the

@@ -131,6 +131,14 @@ body {
   --tint: rgba(37, 214, 96, 0.7);
 }
 
+/* Armor collected. A third color through the same one element and one keyframe, for
+   the same reason red and green share them: these are all "your survivability just
+   changed" pointing in different directions, and a separate overlay per color is how
+   the three fades drift apart. Blue matches the cube, its glow and its bar. */
+#vignette.armor {
+  --tint: rgba(45, 130, 235, 0.72);
+}
+
 #vignette.flash {
   animation: vignette 520ms ease-out;
 }
@@ -175,24 +183,116 @@ body {
   }
 }
 
-/* Health, bottom center. Deliberately the loudest thing in the HUD: it's the only
-   readout that changes what the player should do next, and at 18px in a corner it
-   was being missed until the screen went red. Big, bold, and directly under the
-   crosshair, so it's read without looking away from the fight.
+/* The vitals stack, bottom center: the armor pair on top of the health pair, each
+   a bar with its number under it. Only the wrapper is positioned — everything
+   inside is in normal flow rather than pinned to its own offset, so either font
+   size is free to change without re-deriving a `bottom` for the bars. Same
+   reasoning as #announce-sub under #announce-title.
 
-   The heavy shadow is doing real work here rather than being decoration — this sits
-   inside #muzzle's glow, so every shot briefly lights the area behind the number. */
-#health {
+   Anchored at the bottom, so the stack grows *upward*: #health stays exactly where
+   it was when the armor pair was added above it. */
+#vitals {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 18px;
   text-align: center;
-  font-size: 46px;
+}
+
+/* The bars carry this readout and the numbers under them are the detail: a number has
+   to be read, where a length is taken in with the eye that's already on the
+   crosshair. So they're wide enough to be a *length* at a glance — several times the
+   width of the number below, which is what makes the pair read as an instrument with
+   a label rather than as a number with a rule over it.
+
+   The armor bar is the same width so the two stack into one instrument, and thinner
+   because it holds half as much: at 50 AP against 100 HP, a full blue bar as heavy
+   as a full green one would overstate what it's worth. Same left/right extent is
+   what makes the pair comparable at a glance.
+
+   None of these numbers is in config.js — nothing in the game reads a bar's size or
+   color. The two numbers this needs, PLAYER.maxHealth and PLAYER.maxArmor, are
+   already tunables gameplay reads, and hud.js divides by them. Same split as
+   #hitmarks and #popups. */
+#healthbar,
+#armorbar {
+  width: 260px;
+  /* The same gap under both, so a bar and the number beneath it sit closer to each
+     other than to the next pair up. That's the whole grouping: with the two numbers
+     now identical (see below), spacing is the only thing left saying which bar a
+     number belongs to. */
+  margin: 0 auto 5px;
+  border: 1px solid rgba(240, 240, 240, 0.45);
+  background: rgba(0, 0, 0, 0.55);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.7);
+}
+
+#healthbar {
+  height: 13px;
+}
+
+#armorbar {
+  height: 9px;
+}
+
+/* Both widths are written by hud.js, as a fraction of PLAYER.maxHealth / maxArmor.
+   The transition is what makes a hit read as a *drop* rather than as a new value: at
+   25 damage a floater's touch takes a quarter of the health bar or half the armor
+   one, and animating it draws the eye where an instant resize wouldn't. Short enough
+   not to lie about the current level for long. */
+#healthbar-fill,
+#armorbar-fill {
+  height: 100%;
+  width: 100%;
+  transition: width 140ms linear;
+}
+
+/* Green rather than the boss bar's red so the two can't be confused at a glance —
+   that one is a thing you're emptying, this one is a thing you're keeping. */
+#healthbar-fill {
+  background: linear-gradient(to bottom, #6cf08a, #21b04a);
+}
+
+/* Blue, the color of the cube and its glow, so the bar that fills when you collect
+   one is obviously the same resource. Deliberately not a third green: the armor pool
+   and the health pool drain in different circumstances and have to be told apart at
+   a glance, mid-fight, out of the corner of the eye. */
+#armorbar-fill {
+  background: linear-gradient(to bottom, #7cc4ff, #1f6fd0);
+}
+
+/* The two numbers, each under its own bar. Identical size, weight and spacing,
+   because they're two readings of the same kind of thing and the *bars* are what
+   carry the emphasis now — the exact figure is the detail you check, where the length
+   above it is what's taken in by the eye that's already on the crosshair. HP at 46px
+   over AP at 17 made one of the pair the loudest thing on the screen and the other
+   look like a footnote on it.
+
+   Each takes its color from the bar it belongs to, which is what pairs a number with
+   a length rather than leaving four separate marks in the corner of the view. The
+   heavy shadow is doing real work rather than being decoration: this stack sits
+   inside #muzzle's glow, so every shot briefly lights the area behind it. */
+#health,
+#armor {
+  text-align: center;
+  font-size: 17px;
   font-weight: bold;
-  letter-spacing: 0.1em;
-  color: #f2e3cd;
-  text-shadow: 0 2px 4px #000, 0 0 18px rgba(0, 0, 0, 0.95);
+  letter-spacing: 0.16em;
+  text-shadow: 0 1px 3px #000, 0 0 14px rgba(0, 0, 0, 0.95);
+}
+
+#health {
+  color: #7ef09a;
+}
+
+/* The margin is the seam between the two pairs, and it's on the AP number because
+   that's the element that physically sits between the two bars. It has to be wider
+   than the gap above it, or the armor number is equidistant between two bars and
+   reads as a caption on the health one — four marks in a column with no grouping,
+   which is the one misreading this stack has to avoid. */
+#armor {
+  color: #9fd0ff;
+  margin-bottom: 11px;
 }
 
 #readout {
@@ -265,12 +365,15 @@ body {
   }
 }
 
-/* Pickup notice: "HP RESTORED". Below the crosshair, where #announce is above it —
-   a message about something that just happened to the player shouldn't appear in the
-   spot reserved for a round starting. Clear of #readout, which is bottom *left*.
-   Green, the color the score popups already use for a reward and the one the health
-   cube itself glows. Rises as it fades, like a popup, so it reads as a pickup
-   confirmation rather than as a status line. */
+/* Pickup notice: "HP RESTORED" / "AP RESTORED". Below the crosshair, where #announce
+   is above it — a message about something that just happened to the player shouldn't
+   appear in the spot reserved for a round starting. Clear of #readout, which is
+   bottom *left*. Rises as it fades, like a popup, so it reads as a pickup
+   confirmation rather than as a status line.
+
+   The color is the item's, supplied by the class hud.js adds — green for health (the
+   color the score popups already use for a reward and the one that cube glows), blue
+   for armor. Tinting it is what stops a blue vignette arriving over a green message. */
 #notice {
   position: absolute;
   left: 0;
@@ -280,9 +383,16 @@ body {
   font-size: 24px;
   font-weight: bold;
   letter-spacing: 0.2em;
-  color: #5fe27a;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.95);
   opacity: 0;
+}
+
+#notice.heal {
+  color: #5fe27a;
+}
+
+#notice.armor {
+  color: #7cc4ff;
 }
 
 #notice.flash {

@@ -13,6 +13,13 @@ export class Player {
     this.world = world;
 
     this.health = PLAYER.maxHealth;
+
+    // Armor points: a second pool that takes damage ahead of health. Starts empty
+    // and the only thing that ever fills it is an armor drop — refillHealth() and
+    // reset() deliberately don't, which is what makes it a thing the player has to go
+    // and get rather than something the game hands back.
+    this.armor = 0;
+
     this.position = new THREE.Vector3(0, PLAYER.eyeHeight, 0);
 
     // Look angles kept separately from camera.rotation so pitch can be clamped
@@ -153,12 +160,21 @@ export class Player {
    *        hud.scorePopup's).
    */
   takeDamage(amount, source = null) {
-    const before = this.health;
-    this.health = Math.max(0, this.health - amount);
+    const before = this.health + this.armor;
 
-    // Only report a real loss, so a hit landing at 0 HP doesn't re-trigger
-    // feedback for damage that didn't happen.
-    if (this.health < before) this.onDamage?.(amount, source);
+    // Armor first, and only what it can't cover reaches health — so a hit landing on
+    // 10 AP spends those 10 and puts the remaining 15 on the bar, rather than either
+    // pool absorbing the whole thing. Health is floored at 0; armor can't go under it
+    // because it never absorbs more than it has.
+    const absorbed = Math.min(this.armor, amount);
+    this.armor -= absorbed;
+    this.health = Math.max(0, this.health - (amount - absorbed));
+
+    // Only report a real loss, so a hit landing at 0 HP and no armor doesn't
+    // re-trigger feedback for damage that didn't happen. Measured across both pools:
+    // a hit soaked entirely by armor cost the player something real, so the sound and
+    // the wedge still have to fire.
+    if (this.health + this.armor < before) this.onDamage?.(amount, source);
   }
 
   /**
@@ -202,6 +218,9 @@ export class Player {
    */
   refillHealth() {
     this.health = PLAYER.maxHealth;
+    // Armor is deliberately untouched. It's recoverable only from an armor drop, so
+    // the reward for putting a boss down is a full bar and whatever buffer the player
+    // had managed to keep — not a reset of both pools.
 
     // Reported unconditionally, unlike onDamage's "only a real loss" guard. A
     // refill at full health is still an event the player earned — the HP RESTORED
@@ -212,8 +231,27 @@ export class Player {
     this.onHeal?.();
   }
 
+  /**
+   * Armor back to full, from an armor drop. The spec is "+50, capped at 50", which
+   * from any starting value is a refill — hence the same all-or-nothing shape as
+   * refillHealth() rather than an addArmor(amount) nobody would ever call with
+   * anything but the cap.
+   *
+   * No onArmor hook to match onHeal, and that asymmetry is the rule working rather
+   * than an omission: onHeal exists because *two* unrelated callers heal (a medkit
+   * and a boss going down) and a hook is what lets one line of feedback cover both.
+   * This has exactly one caller — main.js's own collect handler — so a hook would be
+   * indirection with nothing to unify, and main.js flashes the HUD there directly.
+   */
+  refillArmor() {
+    this.armor = PLAYER.maxArmor;
+  }
+
   reset() {
     this.health = PLAYER.maxHealth;
+    // Back to nothing, not to the cap: a new run starts with whatever armor the
+    // player has earned in it, which at frame one is none.
+    this.armor = 0;
     this.position.set(0, PLAYER.eyeHeight, 0);
     this.yaw = 0;
     this.pitch = 0;

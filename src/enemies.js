@@ -17,7 +17,7 @@ const BOSS_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x9b30c4, flatShadi
 
 // One halo material per tier over the one shared texture, same reasoning as the
 // shared geometry above. Both the texture and the material live in glow.js because
-// the health drops in pickups.js carry the same aura — see there.
+// the drops in pickups.js carry the same aura — see there.
 const HALO_MATERIAL = haloMaterial(ENEMY.glow);
 const BOSS_HALO_MATERIAL = haloMaterial(BOSS.glow);
 
