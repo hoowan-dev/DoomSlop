@@ -42,8 +42,10 @@ const sound = new Sound();
 //
 // Which item it was comes off `pickup.kind`, the same pointer-at-a-config-block an
 // enemy carries. This branch *is* the drop table's semantics, and it's the whole of
-// what a second item type costs: everything about being a floating, bobbing,
-// expiring, collectable cube is already shared.
+// what an item type costs on the drop side: everything about being a floating,
+// bobbing, expiring, collectable cube is already shared. The boots cost more than the
+// armor cube did, but not here — the extra was a timer on the player and a row on the
+// HUD, neither of which is anything to do with being a drop.
 pickups.onCollect = (pickup) => {
   if (pickup.kind === PICKUP.armor) {
     // "+50 AP, capped at 50" is a refill from any starting value, so it's the same
@@ -55,6 +57,19 @@ pickups.onCollect = (pickup) => {
     sound.itemPickup();
     hud.notice('AP RESTORED', 'armor');
     hud.vignette('armor');
+    return;
+  }
+
+  if (pickup.kind === PICKUP.boots) {
+    // Both numbers come off the face block and are handed over, because the player
+    // knows nothing about drops — the same arrangement as the two refills, where
+    // main.js is the only thing that knows what walking over a cube means. The
+    // multiplier is applied to speed and to jump *height*; player.js takes the square
+    // root that second one needs.
+    player.boost(PICKUP.boots.boost, PICKUP.boots.duration);
+    sound.itemPickup();
+    hud.notice('SUPER BOOTS', 'boots');
+    hud.vignette('boots');
     return;
   }
 
@@ -249,6 +264,11 @@ function frame() {
   // Outside the running check, like the HUD: these stay drawn while paused
   // instead of going blank behind the overlay.
   hud.update(player.health, player.armor, score, rounds.label, rounds.progress);
+  // Outside the running check like the rest of the HUD, so the row stays on screen
+  // behind the pause overlay. It doesn't tick there — the countdown lives in
+  // player.update() — so a paused buff holds its remaining seconds rather than
+  // draining while the game is stopped.
+  hud.updateBoost(player.boostTime, player.boostDuration);
   hud.updateBoss(enemies.boss);
   // Both raw arrays, not hitboxes() — that allocates one per call, and this runs
   // every frame. Same two-array shape as updateGlows below, for the same reason.

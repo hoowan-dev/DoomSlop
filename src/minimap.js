@@ -142,10 +142,10 @@ export class Minimap {
   }
 
   /**
-   * Drops, as small upright icons: a cross for health, a shield for armor. The same
-   * two symbols painted on the cubes themselves, which is what ties a blip to the
-   * thing you walk over to collect — neither is a dot, because both dots on this
-   * canvas are things trying to kill you.
+   * Drops, as small upright icons: a cross for health, a shield for armor, a boot for
+   * the boots. The same symbols painted on the cubes themselves, which is what ties a
+   * blip to the thing you walk over to collect — none of them is a dot, because both
+   * dots on this canvas are things trying to kill you.
    *
    * Placement is identical to the enemy dots' — the same single ctx.rotate(player.yaw)
    * with raw world offsets plotted into it, which is the one thing about this canvas
@@ -172,18 +172,35 @@ export class Minimap {
       const dz = item.mesh.position.z - player.position.z;
       if (dx * dx + dz * dz > rangeSq) continue;
 
-      const armor = item.kind === PICKUP.armor;
-
       ctx.save();
       ctx.translate(dx * scale, dz * scale);
       ctx.rotate(-player.yaw);
-      ctx.fillStyle = armor ? MINIMAP.armorColor : MINIMAP.healthColor;
-      if (armor) this._shield(ctx, MINIMAP.armorArm);
-      else this._cross(ctx, MINIMAP.healthArm, MINIMAP.healthThickness);
+      this._blip(ctx, item.kind);
       ctx.restore();
     }
 
     ctx.restore();
+  }
+
+  /**
+   * One drop's glyph, drawn at the origin of a frame that's already been positioned
+   * and turned back upright. Split out so the dispatch is one place: health is the
+   * fall-through here for the same reason it's the fall-through in the drop roll, so
+   * a face added to config.js without a line here still draws *something*.
+   */
+  _blip(ctx, kind) {
+    if (kind === PICKUP.armor) {
+      ctx.fillStyle = MINIMAP.armorColor;
+      this._shield(ctx, MINIMAP.armorArm);
+      return;
+    }
+    if (kind === PICKUP.boots) {
+      ctx.fillStyle = MINIMAP.bootsColor;
+      this._boot(ctx, MINIMAP.bootsArm);
+      return;
+    }
+    ctx.fillStyle = MINIMAP.healthColor;
+    this._cross(ctx, MINIMAP.healthArm, MINIMAP.healthThickness);
   }
 
   /**
@@ -221,6 +238,53 @@ export class Minimap {
     ctx.lineTo(arm, waist);
     ctx.quadraticCurveTo(arm, pull, 0, bottom);
     ctx.quadraticCurveTo(-arm, pull, -arm, waist);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /**
+   * The boots, centered on the origin and filled, facing right. Same three-part
+   * construction as drawBoot() in pickups.js — a boldly flared collar, a leg narrower and
+   * squatter than both, a sole overhanging the heel — so the blip and the cube read as one
+   * item. That build is also what stops either of them reading as a capital L, which is the
+   * trap this shape has; see drawBoot() for why the obvious shaft-over-foot version doesn't
+   * survive being small, and why the steps in the width have to be large rather than merely
+   * present. `arm` is half the height.
+   *
+   * The one place it deviates from the cube's icon is the overall aspect: the cube's is
+   * squat, where this stays taller than it is wide. That's what separates it from the round
+   * dots at a glance, before the color does — the same job the shield's proportions do —
+   * and it's affordable here because the collar and the sole carry the read on their own.
+   *
+   * Facing right rather than up even though everything else on this canvas is
+   * direction-agnostic: a boot seen from above isn't a recognizable shape, so this is
+   * deliberately a side-on pictogram and its orientation says nothing about the world.
+   */
+  _boot(ctx, arm) {
+    const top = -arm;
+    const sole = arm;
+    const cuffBot = -arm * 0.6; // a deep collar band, so the leg below it stays squat
+    const cuffL = -arm * 0.7; // and one that overhangs the leg by a wide margin
+    const cuffR = arm * 0.06;
+    const legL = -arm * 0.54;
+    const legR = -arm * 0.08; // the shin
+    const ankle = -arm * 0.2;
+    const toe = arm * 0.9;
+    const soleL = -arm * 0.8; // the sole overhangs the leg behind the heel
+
+    ctx.beginPath();
+    ctx.moveTo(cuffL, top);
+    ctx.lineTo(cuffR, top);
+    ctx.lineTo(cuffR, cuffBot);
+    ctx.lineTo(legR, cuffBot); // step in under the collar
+    ctx.lineTo(legR, ankle);
+    ctx.quadraticCurveTo(arm * 0.2, arm * 0.2, arm * 0.5, arm * 0.03); // the instep dip
+    ctx.quadraticCurveTo(toe, -arm * 0.03, toe, arm * 0.49); // the rounded toe cap
+    ctx.lineTo(toe, sole);
+    ctx.lineTo(soleL, sole);
+    ctx.quadraticCurveTo(soleL, arm * 0.31, legL, arm * 0.14); // the rounded heel
+    ctx.lineTo(legL, cuffBot);
+    ctx.lineTo(cuffL, cuffBot);
     ctx.closePath();
     ctx.fill();
   }

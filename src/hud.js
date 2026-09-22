@@ -21,6 +21,9 @@ export class Hud {
     this.healthFillEl = document.getElementById('healthbar-fill');
     this.armorEl = document.getElementById('armor');
     this.armorFillEl = document.getElementById('armorbar-fill');
+    this.bootsEl = document.getElementById('boots');
+    this.bootsTimeEl = document.getElementById('bootstime');
+    this.bootsFillEl = document.getElementById('bootsbar-fill');
     this.scoreEl = document.getElementById('score');
     this.roundEl = document.getElementById('round');
     this.progressEl = document.getElementById('progress');
@@ -37,6 +40,8 @@ export class Hud {
 
     this._health = null;
     this._armor = null;
+    this._bootsShown = false;
+    this._bootsSeconds = null;
     this._score = null;
     this._round = null;
     // undefined, not null: null is a real value for progress (it means "hide
@@ -90,13 +95,13 @@ export class Hud {
   }
 
   /**
-   * A one-line message under the crosshair: "HP RESTORED" or "AP RESTORED" when a
-   * drop is taken. Separate from announce() rather than a third argument to it — that
+   * A one-line message under the crosshair: "HP RESTORED", "AP RESTORED" or
+   * "SUPER BOOTS" when a drop is taken. Separate from announce() rather than a third argument to it — that
    * one owns the center of the screen and is driven by the round machine, which times
    * ROUNDS.bossDelay against its animation. This has no such coupling, and nothing
    * waits on it, so its whole duration is the CSS.
    *
-   * @param kind 'heal' or 'armor', doubling as the CSS class that colors it, exactly
+   * @param kind 'heal', 'armor' or 'boots', doubling as the CSS class that colors it, exactly
    *        as vignette()'s argument does — so there's no mapping table here to keep in
    *        step with the stylesheet. Tinted rather than left one color because the
    *        vignette that goes up with it is the item's color, and a green message
@@ -109,7 +114,7 @@ export class Hud {
     // reflow between, a second pickup inside the animation window wouldn't replay it.
     // The tint comes off with it, so back-to-back drops of different kinds can't leave
     // one message wearing the other's color.
-    this.noticeEl.classList.remove('flash', 'heal', 'armor');
+    this.noticeEl.classList.remove('flash', 'heal', 'armor', 'boots');
     void this.noticeEl.offsetWidth;
     this.noticeEl.classList.add(kind, 'flash');
   }
@@ -170,19 +175,19 @@ export class Hud {
 
   /**
    * Full-screen tint pulsing in from the edges: red on taking a hit, green on
-   * collecting health, blue on collecting armor. One element and one animation for
-   * all three, with the color swapped by the class — they're the same event shape
+   * collecting health, blue on armor, yellow on the boots. One element and one animation
+   * for all of them, with the color swapped by the class — they're the same event shape
    * ("what you can survive just changed, look at the bars") pointing in different
    * directions, and splitting them into an overlay each would let the fades drift
    * apart.
    *
-   * @param kind 'damage', 'heal' or 'armor'. Doubles as the CSS class, so there's no
-   *        mapping table to keep in step with the stylesheet.
+   * @param kind 'damage', 'heal', 'armor' or 'boots'. Doubles as the CSS class, so
+   *        there's no mapping table to keep in step with the stylesheet.
    */
   vignette(kind) {
     // The tint classes come off with the animation: a heal landing inside a
     // damage flash has to replace its color, not sit on top of it.
-    this.vignetteEl.classList.remove('flash', 'damage', 'heal', 'armor');
+    this.vignetteEl.classList.remove('flash', 'damage', 'heal', 'armor', 'boots');
     void this.vignetteEl.offsetWidth;
     this.vignetteEl.classList.add(kind, 'flash');
   }
@@ -254,6 +259,48 @@ export class Hud {
     labelEl.textContent = `${label} ${value}`;
     const fill = Math.max(0, Math.min(1, value / max));
     fillEl.style.width = `${fill * 100}%`;
+  }
+
+  /**
+   * The SUPER BOOTS row, on top of the two pools: a yellow bar draining from full with
+   * `SB <seconds>` under it. Its own method rather than a sixth argument to update(),
+   * for the same reason updateBoss() is one — this isn't a value the HUD paints every
+   * frame regardless, it's a thing that isn't there most of the time.
+   *
+   * Deliberately *not* run through _vital(), even though it's a number over a bar. That
+   * helper exists to make a level and its label two views of one value, and here they
+   * aren't: the bar drains continuously while the number steps in whole seconds, so
+   * writing them from one value would either give a bar that jumps once a second or a
+   * label reading SB 6.4283.
+   *
+   * @param remaining seconds of buff left, straight off player.boostTime.
+   * @param duration what it started at (player.boostDuration), so the fraction can be
+   *        drawn without this file knowing which item grants it or for how long.
+   */
+  updateBoost(remaining, duration) {
+    const active = remaining > 0;
+
+    if (active !== this._bootsShown) {
+      this.bootsEl.classList.toggle('hidden', !active);
+      this._bootsShown = active;
+    }
+
+    // Nothing to write behind a hidden row, and skipping it also means the next buff
+    // starts from a full bar rather than briefly showing the last one's final frame.
+    if (!active) return;
+
+    // Ceiled, so the final second reads SB 1 for the whole of it rather than SB 0.
+    const seconds = Math.ceil(remaining);
+    if (seconds !== this._bootsSeconds) {
+      this.bootsTimeEl.textContent = `SB ${seconds}`;
+      this._bootsSeconds = seconds;
+    }
+
+    // The one fill in the HUD written every frame rather than off a change check:
+    // it's draining continuously, so "did it change" is always yes. It's also the one
+    // with no CSS transition, for the same reason — see style.css.
+    const fill = duration > 0 ? Math.max(0, Math.min(1, remaining / duration)) : 0;
+    this.bootsFillEl.style.width = `${fill * 100}%`;
   }
 
   /**

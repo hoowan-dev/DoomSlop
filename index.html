@@ -46,13 +46,30 @@
            the two fills' widths and the two numbers; everything else is style.css.
 
            The bars carry the read and the numbers are matched labels on them, which
-           is why HP and AP are the same size as each other and differ only in color.
-           Armor is the pair on top because it's the buffer in front of the health
-           below it, so it reads as sitting in the way of the damage. Always drawn,
-           even at AP 0 — an empty bar is accurate where #progress's frozen 25/25
-           would have been misleading, and a pair that appeared and vanished would be
-           movement right where the player's eye rests under fire. -->
+           is why HP, AP and SB are the same size as each other and differ only in
+           color. Armor is above health because it's the buffer in front of it, so it
+           reads as sitting in the way of the damage; both are always drawn, even at
+           AP 0 — an empty bar is accurate where #progress's frozen 25/25 would have
+           been misleading, and a pair that appeared and vanished would be movement
+           right where the player's eye rests under fire.
+
+           The boots pair on top is the exception to that last point and has to be:
+           a timer at zero is a countdown on nothing, where an empty pool is a true
+           statement about a resource the player always has. It's on top because it's
+           the only one of the three that's about to vanish. -->
       <div id="vitals">
+        <!-- SUPER BOOTS timer, on top of the two pools. Wrapped, unlike the pairs
+             below, for two reasons: the whole pair appears and disappears with the
+             buff, and one element toggling beats two that could disagree about
+             whether they're on screen; and the wrapper carries the seam margin
+             between this pair and the armor one, the job #armor's does lower down.
+             Hidden here in the markup, so it can't paint before hud.js first runs.
+             Its text is a countdown rather than a level, hence #bootstime — the two
+             ids below are the pools they name. -->
+        <div id="boots" class="hidden">
+          <div id="bootsbar"><div id="bootsbar-fill"></div></div>
+          <div id="bootstime">SB --</div>
+        </div>
         <div id="armorbar"><div id="armorbar-fill"></div></div>
         <div id="armor">AP --</div>
         <div id="healthbar"><div id="healthbar-fill"></div></div>
@@ -109,7 +126,7 @@
            through config.js and hud.js. Bump it by hand; this is the only place
            it appears. Kept out of package.json's `version` too, which is a semver
            for the package, not a build number for the game. -->
-      <div id="build">BUILD 1.11</div>
+      <div id="build">BUILD 1.13</div>
     </div>
 
     <!-- Click-to-start / paused overlay. Shown whenever the pointer is unlocked.

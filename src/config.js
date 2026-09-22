@@ -117,7 +117,12 @@ export const BOSS = {
   // erase a full health bar in a fraction of a second.
   attackInterval: 1.2,
   // Must stay below arenaSize/2 - radius, or every bearing is out of bounds and
-  // _spawnPoint() falls through to its center-ward fallbackw
+  // _spawnPoint() falls through to its center-ward fallback on every attempt.
+  spawnDistance: 20,
+  hoverHeight: BOSS_HOVER,
+  // The boss deliberately doesn't get the floaters' height variety: its entrance
+  // is staged — named by the flash, alone in a wiped arena — and a radius-3 orb
+  // arriving at a random altitude reads as a glitch rather than as variety. There's
   // barely room for it anyway, between its radius and WORLD.wallHeight. Both ends
   // equal to hoverHeight makes the settle in enemies.js a no-op for this tier.
   // Present as real fields rather than omitted because every enemy reads its
@@ -181,17 +186,19 @@ export const ROUNDS = {
 
 // The drop system: what a dead enemy leaves behind. Everything from `dropChance`
 // down to `shrinkTime` is the *system* — there is one drop shape and every item
-// shares it — and the two blocks at the bottom are its two faces: the health cube
-// and the armor cube.
+// shares it — and the blocks at the bottom are its faces: the health cube, the
+// armor cube and the super boots.
 //
 // A drop's `kind` points at one of those faces, exactly as an enemy's points at
 // ENEMY or BOSS, which is what lets effects.js read `item.kind.glow` without
 // knowing which it was handed. Same rule as those two blocks: a new per-face field
 // has to be added to *both*, or one of them is an undefined that silently means 0.
 // What deliberately *isn't* duplicated down there is the physics — size, reach,
-// hover height, bob, spin, life. The two items are one cube with a different
-// picture on it, and giving armor its own radius or bob speed would be inventing a
-// difference the game doesn't have.
+// hover height, bob, spin, life. The items are one cube with a different picture on
+// it, and giving armor its own radius or bob speed would be inventing a difference
+// the game doesn't have. The boots' two *effect* numbers do live on their face,
+// because a duration is genuinely that item's and nothing else in the game has one:
+// the rule is "what differs goes on the face", not "faces hold only colors".
 //
 // Colors in the faces are CSS strings rather than the 0x literals the rest of this
 // file uses, like MINIMAP's: the icon is drawn into a canvas with the 2D API (see
@@ -204,13 +211,23 @@ export const PICKUP = {
   // sweep, so suiciding floaters and the round wipe can't pay out. At 0.15 against
   // ROUNDS.killsPerRound that's between three and four a round.
   dropChance: 0.15,
-  // Of the drops that do happen, the share that come up armor rather than health.
-  // A minority on purpose: health is what gets the player out of trouble they're
-  // already in, where armor is a buffer against trouble they haven't met yet, so a
-  // table weighted the other way would mostly hand shields to a player at 20 HP.
-  // A second roll after dropChance rather than a chance of its own, so the overall
-  // drop rate stays the one number above.
+  // Of the drops that do happen, which one it is: a second roll after dropChance
+  // rather than a chance per item, so the overall drop rate stays the one number
+  // above and adding an item moves the split instead of diluting it.
+  //
+  // Health is deliberately the *remainder* rather than a third field — the three
+  // shares have to sum to 1, and a healthShare would be a second place to get that
+  // wrong. pickups.js walks these cumulatively in the order written here, so health
+  // gets whatever's left (0.50 as shipped).
+  //
+  // Health has the plurality on purpose: it's what gets the player out of trouble
+  // they're already in, where the other two buffer trouble they haven't met yet — a
+  // table weighted the other way would mostly hand shields to a player at 20 HP. The
+  // boots are rarest because they're the only drop that changes how the game *plays*
+  // rather than how much of it you can take; at this share they land about every
+  // other round.
   armorShare: 0.35,
+  bootsShare: 0.15,
 
   size: 0.8, // cube edge, in world units — a little smaller than a floater's 1.2 across
   radius: 0.6, // collection radius; the player walks over it at this plus PLAYER.radius
@@ -275,6 +292,39 @@ export const PICKUP = {
     // which is a matter of what the eye does rather than of what the number says.
     glow: { color: 0x2f8bff, intensity: 11, distance: 7, haloScale: 2.2, haloOpacity: 0.6 },
   },
+
+  // SUPER BOOTS: the one drop that isn't a resource. It doesn't fill a pool, it runs
+  // a timer — triple move speed and triple jump height for `duration` seconds — which
+  // is why this face carries two numbers the other two don't. Yellow because it's the
+  // fifth and last hue, and the only one that's neither a threat nor a pool: red and
+  // purple are trying to kill you, green and blue are levels on the bars.
+  boots: {
+    bodyColor: '#f7efd8', // warm off-white, tinted toward the icon like the armor cube
+    iconColor: '#d8961a', // a darker gold than the glow, or the boot vanishes into it
+    edgeColor: '#bcab7e',
+
+    // Same intensity as the armor cube rather than the health cube's 9, and for the
+    // same reason: at equal candela yellow sits between them against a dark floor, and
+    // what the three drops should match is how *present* they look from across the
+    // arena. haloScale is the 2.2 every glowing thing in the game holds — see BOSS.glow.
+    glow: { color: 0xffd11a, intensity: 11, distance: 7, haloScale: 2.2, haloOpacity: 0.6 },
+
+    // How long the buff runs, from the moment of collection. player.js counts it down
+    // in update(), so it pauses with the game.
+    duration: 10,
+
+    // The multiplier, and it means move speed *and jump height* — not jump speed. The
+    // apex is jumpSpeed^2 / (2 * gravity), so tripling the height means multiplying
+    // jumpSpeed by sqrt(3); tripling jumpSpeed itself would be a *nine*-fold hop.
+    // player.js takes that root, which is the one place this number is interpreted
+    // rather than just applied.
+    //
+    // The same balance constraint PLAYER.jumpSpeed carries applies here and is what
+    // caps this number: eyeHeight plus the boosted apex has to stay under
+    // WORLD.wallHeight or a jump sees out over the arena. At 3 that's 1.7 + 3.17 =
+    // 4.87 against a wall of 8, so there's room — but at 8 the player clears them.
+    boost: 3,
+  },
 };
 
 export const WEAPON = {
@@ -318,16 +368,19 @@ export const MINIMAP = {
   bossColor: '#b957d9',
   bossRadius: 6,
 
-  // Drops. Neither is a dot, and that's the rule rather than a style choice: both
-  // dots above are things trying to kill you, so the things on the map that aren't
-  // shouldn't be told apart from them by hue alone. Each blip is the same icon
-  // that's painted on its cube (PICKUP.health/armor iconColor), which is what ties
-  // it to the object you go and stand on — a cross for health, a shield for armor.
+  // Drops. None of them is a dot, and that's the rule rather than a style choice:
+  // both dots above are things trying to kill you, so the things on the map that
+  // aren't shouldn't be told apart from them by hue alone. Each blip is the same icon
+  // that's painted on its cube (each PICKUP face's iconColor), which is what ties it
+  // to the object you go and stand on — a cross for health, a shield for armor, a
+  // boot for the boots.
   //
   // Hence the naming: `arm` is the half-length of a cross stroke and `thickness` its
-  // width, `armorArm` the shield's half-width. None of them is a radius, so none
-  // shares the dots' naming. The shield's proportions are in minimap.js with the
-  // cube's icon proportions, since they're the shape rather than a tunable.
+  // width, `armorArm` the shield's half-width, `bootsArm` the boot's half-*height*
+  // (it's the one glyph whose width follows from its height rather than the other way
+  // round). None of them is a radius, so none shares the dots' naming. Every glyph's
+  // proportions are in minimap.js with the cube icons', since they're the shape
+  // rather than a tunable.
   healthColor: '#3ddc6a',
   healthArm: 3.4,
   healthThickness: 1.8,
@@ -336,6 +389,17 @@ export const MINIMAP = {
   // of the two.
   armorColor: '#4aa8ff',
   armorArm: 3,
+  // Half the boot's height; minimap.js derives its width from that, a little under the
+  // full height so the glyph stays obviously taller than it is wide.
+  //
+  // Deliberately the largest of the three glyphs, which is a legibility call and not an
+  // importance one: a cross is two bars and a shield is one tapering outline, where a
+  // boot is a collar, a leg and a sole that only read as a boot *together* (see
+  // minimap.js). At the cross's 3.4 all three parts land inside about six pixels and it
+  // comes out a yellow smudge. This is the smallest it survives at, and it's still small
+  // enough that an enemy dot drawn over it wins the spot.
+  bootsColor: '#ffd12e',
+  bootsArm: 4.8,
 };
 
 // Floating "+100" over a kill. Timing lives here rather than in a CSS animation

@@ -139,6 +139,13 @@ body {
   --tint: rgba(45, 130, 235, 0.72);
 }
 
+/* SUPER BOOTS collected. Yellow, matching the cube, its glow, its blip and its timer
+   bar — the same rule every other drop follows, so the flash and the thing that caused
+   it are never two colors. */
+#vignette.boots {
+  --tint: rgba(235, 176, 26, 0.7);
+}
+
 #vignette.flash {
   animation: vignette 520ms ease-out;
 }
@@ -183,14 +190,16 @@ body {
   }
 }
 
-/* The vitals stack, bottom center: the armor pair on top of the health pair, each
-   a bar with its number under it. Only the wrapper is positioned — everything
-   inside is in normal flow rather than pinned to its own offset, so either font
-   size is free to change without re-deriving a `bottom` for the bars. Same
+/* The vitals stack, bottom center: the boots timer over the armor pair over the
+   health pair, each a bar with its number under it. Only the wrapper is positioned —
+   everything inside is in normal flow rather than pinned to its own offset, so any
+   font size is free to change without re-deriving a `bottom` for the bars. Same
    reasoning as #announce-sub under #announce-title.
 
-   Anchored at the bottom, so the stack grows *upward*: #health stays exactly where
-   it was when the armor pair was added above it. */
+   Anchored at the bottom, so the stack grows *upward*: #health stayed exactly where
+   it was when the armor pair went above it, and again when the boots row did. That's
+   the whole reason the newest row goes on top — this one appears and disappears
+   mid-fight, and it must not be able to move the health bar. */
 #vitals {
   position: absolute;
   left: 0;
@@ -215,7 +224,8 @@ body {
    already tunables gameplay reads, and hud.js divides by them. Same split as
    #hitmarks and #popups. */
 #healthbar,
-#armorbar {
+#armorbar,
+#bootsbar {
   width: 260px;
   /* The same gap under both, so a bar and the number beneath it sit closer to each
      other than to the next pair up. That's the whole grouping: with the two numbers
@@ -233,6 +243,29 @@ body {
 
 #armorbar {
   height: 9px;
+}
+
+/* Thinner again, and the order is the point: the further up the stack a bar is, the
+   less of the screen it takes, so the health bar stays the heaviest thing here even
+   with two rows above it. It's the same width as the other two rather than shorter,
+   because a timer that ran out *and* got narrower would be reporting twice. */
+#bootsbar {
+  height: 7px;
+}
+
+/* The whole pair goes, not just the bar: an empty timer track over the words SB 0 is
+   a countdown on nothing, where an empty AP bar is a true statement about a pool.
+   display rather than visibility, so the stack closes up and the two pairs below it
+   drop back to where they sit the rest of the time. */
+#boots.hidden {
+  display: none;
+}
+
+/* The seam between this pair and the armor one, matching the one #armor carries below
+   it. On the wrapper because that's the element that physically sits between the two
+   bars — same job, one level up. */
+#boots {
+  margin-bottom: 11px;
 }
 
 /* Both widths are written by hud.js, as a fraction of PLAYER.maxHealth / maxArmor.
@@ -261,19 +294,32 @@ body {
   background: linear-gradient(to bottom, #7cc4ff, #1f6fd0);
 }
 
-/* The two numbers, each under its own bar. Identical size, weight and spacing,
-   because they're two readings of the same kind of thing and the *bars* are what
+/* Yellow, the color of the boots, their glow, their blip and their label. Deliberately
+   *not* in the rule above: this one carries no transition, because it's the only fill
+   here that's driven continuously — hud.js rewrites its width every frame, and a 140ms
+   ease over per-frame writes is a bar lagging its own countdown rather than a level
+   visibly dropping. The other two move in steps and need the animation to read as
+   drops. */
+#bootsbar-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(to bottom, #ffe37a, #e0a21f);
+}
+
+/* The numbers, each under its own bar. Identical size, weight and spacing, because
+   they're readings of the same kind of thing and the *bars* are what
    carry the emphasis now — the exact figure is the detail you check, where the length
    above it is what's taken in by the eye that's already on the crosshair. HP at 46px
    over AP at 17 made one of the pair the loudest thing on the screen and the other
    look like a footnote on it.
 
    Each takes its color from the bar it belongs to, which is what pairs a number with
-   a length rather than leaving four separate marks in the corner of the view. The
+   a length rather than leaving a column of separate marks under the crosshair. The
    heavy shadow is doing real work rather than being decoration: this stack sits
    inside #muzzle's glow, so every shot briefly lights the area behind it. */
 #health,
-#armor {
+#armor,
+#bootstime {
   text-align: center;
   font-size: 17px;
   font-weight: bold;
@@ -293,6 +339,12 @@ body {
 #armor {
   color: #9fd0ff;
   margin-bottom: 11px;
+}
+
+/* No margin of its own — #boots above carries the seam for this pair, since the
+   wrapper is what's between the two bars. */
+#bootstime {
+  color: #ffdf6a;
 }
 
 #readout {
@@ -393,6 +445,10 @@ body {
 
 #notice.armor {
   color: #7cc4ff;
+}
+
+#notice.boots {
+  color: #ffd868;
 }
 
 #notice.flash {

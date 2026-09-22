@@ -32,6 +32,19 @@ export class Player {
     // the one axis that needs state carried between frames.
     this.velocityY = 0;
 
+    // The SUPER BOOTS buff. Seconds left and what it multiplies; `boostScale` below is
+    // the only thing that should be read, since these two together are the state and a
+    // reader that took the multiplier alone would keep applying it forever.
+    //
+    // The numbers arrive through boost() rather than being read out of config here,
+    // because the player has no idea drops exist — the same reason refillArmor() takes
+    // no argument and main.js is what knows a blue cube fills it.
+    this.boostTime = 0;
+    this.boostMultiplier = 1;
+    // What boostTime started at, kept only so the HUD can draw the timer as a fraction
+    // without having to know which item granted it.
+    this.boostDuration = 0;
+
     this.camera.rotation.order = 'YXZ';
 
     // Reused every frame so the loop doesn't allocate a Vector3 per tick.
@@ -53,7 +66,39 @@ export class Player {
     this._syncCamera();
   }
 
+  /**
+   * The live speed/jump multiplier: the boots' number while they're running, 1
+   * otherwise. A getter over the timer rather than a field flipped back to 1 when it
+   * expires, for the same reason `grounded` in _jump() is a height test — one piece of
+   * state can't fall out of step with itself.
+   */
+  get boostScale() {
+    return this.boostTime > 0 ? this.boostMultiplier : 1;
+  }
+
+  /**
+   * Run the boots for `duration` seconds. Refreshes rather than stacks: a second pair
+   * collected mid-buff restarts the clock at the same multiplier instead of cubing it,
+   * which is both the reading a player expects and the only one that stays playable —
+   * 9x move speed crosses this arena in under a second.
+   *
+   * @param multiplier applied to move speed directly and to jump *height*, which is
+   *        where _jump() takes its square root. main.js reads both numbers off the face
+   *        block and passes them in; see boostTime above for why they aren't imported.
+   */
+  boost(multiplier, duration) {
+    this.boostMultiplier = multiplier;
+    this.boostTime = duration;
+    this.boostDuration = duration;
+  }
+
   update(dt) {
+    // Counted down here rather than in main.js so it pauses with the game for free —
+    // update() is only called while running. Before the two things that read it, so
+    // the frame it runs out is the first one moving at normal speed rather than the
+    // last one moving fast.
+    if (this.boostTime > 0) this.boostTime = Math.max(0, this.boostTime - dt);
+
     this._look();
     this._walk(dt);
     this._jump(dt);
@@ -91,8 +136,13 @@ export class Player {
 
     if (dir.lengthSq() === 0) return;
 
-    // Normalize before rotating so holding W+D isn't ~1.41x faster than W.
-    dir.normalize().applyAxisAngle(UP, this.yaw).multiplyScalar(PLAYER.moveSpeed * dt);
+    // Normalize before rotating so holding W+D isn't ~1.41x faster than W. The boost
+    // multiplies the speed straight through — it applies in mid-air too, since air
+    // control is the same _walk() call.
+    dir
+      .normalize()
+      .applyAxisAngle(UP, this.yaw)
+      .multiplyScalar(PLAYER.moveSpeed * this.boostScale * dt);
 
     this.position.x += dir.x;
     this.position.z += dir.z;
@@ -108,15 +158,25 @@ export class Player {
     // that can fall out of step with the position.
     const grounded = this.position.y <= PLAYER.eyeHeight;
 
-    // Order matters: consumePress() is destructive, so testing `grounded` first
-    // leaves the press queued while airborne instead of eating it. That buys jump
-    // buffering for free — a tap a few frames before landing fires on touchdown
-    // rather than being silently dropped, which is the difference between the
-    // control feeling responsive and feeling like it missed. It also means a
-    // mid-air tap can't double-jump: nothing reads the press until the player is
-    // back on the floor.
-    if (grounded && this.input.consumePress('Space')) {
-      this.velocityY = PLAYER.jumpSpeed;
+    // The *held* state, not the press edge, and that's what makes holding Space
+    // bounce: the question is asked again on every grounded frame, so a key still
+    // down when the player touches the floor launches on that frame. It also means a
+    // press is never banked — a tap that goes down and up while airborne is gone by
+    // landing and does nothing, which is deliberate: a queued jump fires from input
+    // the player has already let go of.
+    //
+    // Double-jumping stays impossible for the reason it always was — the launch
+    // needs `grounded`, and nothing reads the key anywhere else. isDown() is safe to
+    // ask per-frame here (unlike the skip in main.js, which needs an edge) precisely
+    // because `grounded` gates it: the launch takes the player off the floor, so the
+    // repeat rate is the arc, not the frame rate.
+    if (grounded && this.input.isDown('Space')) {
+      // The *square root* of the boost, and that's the whole reason the multiplier is
+      // interpreted here rather than just applied: the apex is jumpSpeed^2 / (2 *
+      // gravity), so a hop three times as high needs sqrt(3) times the launch speed.
+      // Multiplying jumpSpeed by 3 would be a nine-fold jump, which at this gravity
+      // clears the arena walls and leaves the player airborne for two seconds.
+      this.velocityY = PLAYER.jumpSpeed * Math.sqrt(this.boostScale);
     }
 
     // Resting on the floor. Returning early rather than integrating is what keeps
@@ -258,6 +318,10 @@ export class Player {
     // Dying mid-jump would otherwise carry that velocity into the retry, so the
     // new run opens still rising or still falling from the last one's hop.
     this.velocityY = 0;
+    // Likewise the boots: they're something the last run earned, like armor, so the
+    // new one starts without them. Only the timer is cleared — boostScale reads 1 off
+    // that alone, so the multiplier left behind is inert.
+    this.boostTime = 0;
     this._syncCamera();
   }
 
