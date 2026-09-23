@@ -3,10 +3,23 @@ import { PORTAL, WORLD } from './config.js';
 import { HALO_TEXTURE } from './glow.js';
 import { createShell } from './world.js';
 
-// The two portals: squares of wall that lead to each other. Walk into one and you come
-// out of the other, facing into the arena with the heading you walked in with. Each one
-// shows a live perspective view of where it leads, so the square is a window rather
-// than a colored panel with a rule attached to it.
+// The portals: four squares of wall in two colored pairs, each leading to the other one of
+// its own color. Walk into one and you come out of its partner, facing into the arena with
+// the heading you walked in with. Each shows a live perspective view of where it leads, so
+// the square is a window rather than a colored panel with a rule attached to it.
+//
+// **A pair's two mouths are always on *facing* walls, never adjacent ones**, so a trip is
+// a straight line across the box: the turn in update() works out to exactly zero for every
+// pair a placement can produce, which makes the arena wrap around rather than fold. Corners
+// would have been the more varied rule and are deliberately not allowed — see FACING.
+//
+// **And there is never more than one doorway in a wall**, which with four mouths, four walls
+// and the facing rule above leaves exactly one arrangement: one pair owns the two z walls and
+// the other owns the two x walls. That's what the colors are for and it's a stronger promise
+// than the "opposite ends of the arena" this shipped with — a doorway's partner isn't roughly
+// across the box, it's in the wall *directly behind you*, and the wall you're looking at has
+// only the one. See place() for the draw and PORTAL in config.js for why the colors are the
+// only thing that differs between the pairs.
 //
 // Placement is asked for by rounds.js at the start of every round; the traversal test
 // is ticked by main.js right after player.update() and the previews are rendered by it
@@ -26,26 +39,69 @@ const HALF = WORLD.arenaSize / 2;
  * while walking into this wall. Both because a plane's front is local +Z, and a
  * camera at yaw Y looks along (-sin Y, 0, -cos Y) — so walking into the wall means
  * travelling along -normal, i.e. yaw = atan2(normal.x, normal.z).
+ *
+ * The indices are referred to by FACING below, hence the labels.
  */
 const WALLS = [
+  // 0: z = -HALF, runs along +x
   { normal: new THREE.Vector3(0, 0, 1), run: new THREE.Vector3(1, 0, 0), base: new THREE.Vector3(0, 0, -HALF) },
+  // 1: z = +HALF, runs along +x
   { normal: new THREE.Vector3(0, 0, -1), run: new THREE.Vector3(1, 0, 0), base: new THREE.Vector3(0, 0, HALF) },
+  // 2: x = -HALF, runs along +z
   { normal: new THREE.Vector3(1, 0, 0), run: new THREE.Vector3(0, 0, 1), base: new THREE.Vector3(-HALF, 0, 0) },
+  // 3: x = +HALF, runs along +z
   { normal: new THREE.Vector3(-1, 0, 0), run: new THREE.Vector3(0, 0, 1), base: new THREE.Vector3(HALF, 0, 0) },
 ];
 for (const wall of WALLS) wall.faceYaw = Math.atan2(wall.normal.x, wall.normal.z);
 
-// One geometry and one material per layer, shared by both portals — the same rule the
-// enemy tiers and the pickup faces follow. Built at import time from config, so a
-// driver retuning PORTAL live moves the light (read per frame) and not these.
+// How far along its wall a portal's center may sit, as the `u` in `base + run * u`: anywhere
+// on the wall bar PORTAL.margin at each end. That's corner clearance and nothing else now —
+// the aura spreads half of `size * haloScale` either side of the center, so a doorway in the
+// corner would have half its glow cut off by the wall beside it. It used to do midline duty
+// as well, holding two same-colored mouths apart on a wall they shared; no wall carries two
+// of anything any more, so the whole length between the corners is usable.
+const LIMIT = HALF - PORTAL.margin;
+
+/**
+ * The two ways to choose a pair's walls: the two z walls, or the two x walls.
+ *
+ * **A pair's mouths have to be on *facing* walls and no wall may carry two doorways**, and
+ * between them those two rules leave nothing to decide beyond this. Same wall and the turn
+ * degenerates to nothing while the doorway leads somewhere you could have walked; *adjacent*
+ * walls and a trip turns a corner, which would have been the more varied rule and isn't
+ * allowed. That makes the facing pairs the only candidates, and there are exactly two of
+ * them — so one pair takes one and the other takes what's left.
+ *
+ * **The entries are therefore each other's complement, and `i ^ 1` is the other pair's
+ * walls** — which is the whole of what place() needs from this table, and the reason it's a
+ * table at all rather than two named constants.
+ */
+const FACING = [
+  [0, 1], // the two z walls, each running along x
+  [2, 3], // the two x walls, each running along z
+];
+
+/**
+ * The two pairs, in the order they're built. Iterated rather than named, so the only place
+ * in this file that knows a pair is "blue" or "orange" is config.js.
+ */
+const PAIRS = [PORTAL.blue, PORTAL.orange];
+
+// One geometry per layer, shared by all four portals — the same rule the enemy tiers and
+// the pickup faces follow. Built at import time from config, so a driver retuning PORTAL
+// live moves the light (read per frame) and not these.
+//
+// **The shared aura geometry is why both pairs must hold the same haloScale**, which
+// config.js records as a deliberate equality: there's one size here, so a pair with its
+// own would quietly be drawn at the other's.
 const CORE_GEOMETRY = new THREE.PlaneGeometry(PORTAL.size, PORTAL.size);
-const AURA_SIZE = PORTAL.size * PORTAL.glow.haloScale;
+const AURA_SIZE = PORTAL.size * PORTAL.blue.glow.haloScale;
 const AURA_GEOMETRY = new THREE.PlaneGeometry(AURA_SIZE, AURA_SIZE);
 
 /**
  * The far side's walls, with nothing in them and no lights at all — built once here and
- * shared by both portals, since what each one *shows* differs only in where it's looked
- * at from. See createShell() in world.js for why it's a separate Scene (the arena's
+ * shared by all four portals, since what each one *shows* differs only in where it's
+ * looked at from. See createShell() in world.js for why it's a separate Scene (the arena's
  * light count is compiled into every material and must not move) and why it's unlit.
  *
  * Read at import time like the materials below, so a driver retuning PORTAL.view.brightness
@@ -55,7 +111,7 @@ const AURA_GEOMETRY = new THREE.PlaneGeometry(AURA_SIZE, AURA_SIZE);
 const SHELL = createShell(PORTAL.view.brightness);
 
 // Scratch for renderViews(), at module scope for the usual reason — it runs every frame,
-// twice.
+// once per portal that isn't culled.
 const FRUSTUM = new THREE.Frustum();
 const VIEW_PROJECTION = new THREE.Matrix4();
 const CULL_SPHERE = new THREE.Sphere();
@@ -73,9 +129,11 @@ const CULL_RADIUS = (AURA_SIZE * Math.SQRT2) / 2;
 const FLIP = new THREE.Matrix4().makeRotationY(Math.PI);
 
 /**
- * The core quad's material: the preview, tinted. **One per portal, unlike every other
- * asset in this file**, because each holds its own render target in `tView` — that's
- * the one thing the two can't share, and it's why this is a factory rather than a const.
+ * The core quad's material: the preview, tinted its pair's color. **One per portal, unlike
+ * every other asset in this file**, because each holds its own render target in `tView` —
+ * that's the one thing the four can't share, and it's why this is a factory rather than a
+ * const. The tint color comes in as a `glow` block for the same reason the aura's does:
+ * see auraMaterial below.
  *
  * Two things in here are less obvious than they look:
  *
@@ -104,10 +162,10 @@ const FLIP = new THREE.Matrix4().makeRotationY(Math.PI);
  * covers far-side distance, and this covers the distance from the doorway to the eye. Left
  * out, a portal across the arena stays crisp inside a wall that has hazed away.
  */
-function viewMaterial(texture) {
+function viewMaterial(texture, glow) {
   const uniforms = THREE.UniformsUtils.clone(THREE.UniformsLib.fog);
   uniforms.tView = { value: texture };
-  uniforms.uTint = { value: new THREE.Color(PORTAL.glow.color) };
+  uniforms.uTint = { value: new THREE.Color(glow.color) };
   uniforms.uTintAmount = { value: PORTAL.view.tint };
 
   return new THREE.ShaderMaterial({
@@ -163,15 +221,28 @@ function viewMaterial(texture) {
  * Depth tested and not written, like every other halo: the wall behind it is further
  * away so it draws, and not writing depth keeps it from cutting a hole in the core
  * quad it overlaps.
+ *
+ * **One per pair, not one per portal** — the same "one material per kind of thing" rule the
+ * enemy tiers and the pickup faces follow, and the reason this takes a `glow` block rather
+ * than a whole pair: the block is the actual shared shape, exactly as glow.js's
+ * haloMaterial() takes one. Built at import time, like every other material here, so a
+ * driver retuning a pair's glow live moves its light and not its aura.
  */
-const AURA_MATERIAL = new THREE.MeshBasicMaterial({
-  map: HALO_TEXTURE,
-  color: PORTAL.glow.color,
-  opacity: PORTAL.glow.haloOpacity,
-  transparent: true,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-});
+function auraMaterial(glow) {
+  return new THREE.MeshBasicMaterial({
+    map: HALO_TEXTURE,
+    color: glow.color,
+    opacity: glow.haloOpacity,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+}
+
+// Keyed by the pair block rather than by index, the same arrangement pickups.js's ASSETS
+// map has and for the same reason: what a portal carries is a pointer at its config block,
+// so that pointer is what looks its assets up.
+const AURA_MATERIALS = new Map(PAIRS.map((pair) => [pair, auraMaterial(pair.glow)]));
 
 export class Portals {
   /**
@@ -185,7 +256,7 @@ export class Portals {
     this.renderer = renderer;
     this.camera = camera;
 
-    // The shell is module state, shared by both portals — hung on the instance so a
+    // The shell is module state, shared by all four portals — hung on the instance so a
     // driver can assert what's in it (walls only, no lights) without importing it.
     this.shell = SHELL;
 
@@ -198,12 +269,20 @@ export class Portals {
     this.onTraverse = null;
 
     /**
-     * Exactly two, built once here and moved on every placement rather than rebuilt.
-     * The lights are the reason (see _build), and a fixed pair of meshes falls out of
-     * it. Two rather than a list because a portal without a partner has nowhere to
-     * lead: `_exitFor()` is the whole pairing, and a third would need a rule.
+     * Exactly four, built once here and moved on every placement rather than rebuilt. The
+     * lights are the reason (see _build) and a fixed set of meshes falls out of it.
+     *
+     * **Laid out as two adjacent couples — [blue, blue, orange, orange] — which is the
+     * pairing rule itself and not just an order.** A portal without a partner has nowhere
+     * to lead, so pairs are the unit; making them adjacent leaves `_exitFor()` with
+     * nothing to look up, since flipping the low bit of an index is the partner. Iterating
+     * PAIRS rather than naming the two is what keeps every color out of this file.
      */
-    this.portals = [this._build(), this._build()];
+    this.portals = [];
+    for (const pair of PAIRS) {
+      this.portals.push(this._build(pair, this.portals.length));
+      this.portals.push(this._build(pair, this.portals.length));
+    }
 
     // Placed immediately so nothing can ever render an unplaced portal. rounds.js
     // re-places them a moment later, at the start of round 1 — this is about the gap
@@ -211,7 +290,13 @@ export class Portals {
     this.place();
   }
 
-  _build() {
+  /**
+   * One doorway. `pair` is its config block (PORTAL.blue / PORTAL.orange) and is the only
+   * thing that differs between the four — carried on the portal exactly as an enemy carries
+   * `kind` and a drop carries its face, so the minimap can color a blip by comparing it and
+   * nothing here has to branch. `index` is its slot in `this.portals`; see _exitFor.
+   */
+  _build(pair, index) {
     const group = new THREE.Group();
 
     // Sized in renderViews() from the live drawing buffer rather than here, so a window
@@ -242,8 +327,8 @@ export class Portals {
     const vcam = new THREE.PerspectiveCamera();
     vcam.matrixAutoUpdate = false;
 
-    const core = new THREE.Mesh(CORE_GEOMETRY, viewMaterial(target.texture));
-    const aura = new THREE.Mesh(AURA_GEOMETRY, AURA_MATERIAL);
+    const core = new THREE.Mesh(CORE_GEOMETRY, viewMaterial(target.texture, pair.glow));
+    const aura = new THREE.Mesh(AURA_GEOMETRY, AURA_MATERIALS.get(pair));
     // Just off the wall, in the group's local frame — which points along the wall's
     // inward normal once the group is turned (see _set). Without this they'd be
     // coplanar with the wall and z-fight it.
@@ -264,9 +349,17 @@ export class Portals {
     // One light per portal, added here and then never added, removed or hidden again.
     // effects.js owns the *pooled* lights and explains why at length; the invariant
     // that matters is that the scene's light count never changes after boot, since
-    // it's compiled into every material's shader program. Two permanent portals
-    // satisfy that without needing to be pooled — there's nothing to reassign.
-    const light = new THREE.PointLight(PORTAL.glow.color, PORTAL.glow.intensity, PORTAL.glow.distance);
+    // it's compiled into every material's shader program. A fixed set of portals
+    // satisfies that without needing to be pooled — there's nothing to reassign.
+    //
+    // **It's also the one place a second pair costs full price, and the only part of this
+    // feature the frustum cull can't help with.** A light is compiled into every material
+    // and every fragment of the arena evaluates its cutoff, so it's paid for whether or
+    // not its doorway is on screen — where a preview is paid for only when it's drawn.
+    // Measured (-portalcost.mjs): 10.0 ms/frame at 1280x800 for the four, against 5 for
+    // the two this shipped with, and nothing at 480x300. Exactly linear in the count,
+    // which is the fill-rate finding EFFECTS.glowPool records.
+    const light = new THREE.PointLight(pair.glow.color, pair.glow.intensity, pair.glow.distance);
     this.scene.add(light);
 
     return {
@@ -275,6 +368,8 @@ export class Portals {
       light,
       target,
       vcam,
+      pair,
+      index,
       wall: null,
       center: new THREE.Vector3(),
       // The doorway's own frame and its inverse, rebuilt on every placement. See
@@ -285,23 +380,59 @@ export class Portals {
   }
 
   /**
-   * Put the pair on two different walls, at a random offset along each. Called by
-   * rounds.js from _startRound(), so it covers a real round change, a skip and a
-   * retry alike — and so a round change is the *only* thing that moves them.
+   * Give each pair one of the two facing pairs of walls, and each of its mouths a spot along
+   * its wall. Called by rounds.js from _startRound(), so it covers a real round change, a
+   * skip and a retry alike — and so a round change is the *only* thing that moves them.
+   *
+   * "One doorway per wall" is one draw and one XOR, and it falls out of FACING having exactly
+   * two entries that are each other's complement: pick one for the first pair and the second
+   * gets `^ 1`. Drawing walls per pair and rejecting the collisions would be the obvious
+   * shape and is strictly worse — a retry loop, and nothing in it saying the four ended up
+   * one to a wall rather than merely not doubled up this time.
+   *
+   * **The draws are in a fixed order and there are exactly five of them**, which is the
+   * thing to preserve when touching this. The drivers stage a placement by stubbing
+   * Math.random and inverting this sequence, so that they drive the real placement instead
+   * of assigning portal state by hand and testing their own arithmetic:
+   *
+   *   1.    which facing pair of walls the first (blue) pair gets — the other takes `^ 1`
+   *   2, 3. a `u` for each of the blue pair's two mouths, in the order FACING lists its walls
+   *   4, 5. the same two for the second (orange) pair
+   *
+   * There's no draw for *which* walls beyond that first one, and there used to be two: a half
+   * of the arena reached three walls and a pair took two of them. The facing-walls rule cut
+   * that to one choice per pair, and one-per-wall ties the two choices together into this
+   * single draw.
    */
   place() {
-    // Two distinct walls without a retry loop: pick the first, then step 1..3 walls
-    // round from it.
-    const first = Math.floor(Math.random() * WALLS.length);
-    const second = (first + 1 + Math.floor(Math.random() * (WALLS.length - 1))) % WALLS.length;
+    const axis = Math.floor(Math.random() * FACING.length);
 
-    this._set(this.portals[0], WALLS[first]);
-    this._set(this.portals[1], WALLS[second]);
+    this._placePair(0, FACING[axis]);
+    this._placePair(2, FACING[axis ^ 1]);
   }
 
-  _set(portal, wall) {
-    // Anywhere along the wall but the corners, which is what PORTAL.margin buys.
-    const u = (Math.random() * 2 - 1) * (HALF - PORTAL.margin);
+  /**
+   * One pair, both doorways, on the two walls it's been given. `first` is the pair's lower
+   * index in `this.portals`; its partner is the next one along (see _exitFor).
+   *
+   * Two `u` draws and nothing else: the walls arrive already decided (see place()), and each
+   * mouth may sit anywhere on its own wall clear of the corners. Which of the two ends up at
+   * `first` carries no meaning either — both mouths are the same doorway and each is the
+   * other's exit.
+   */
+  _placePair(first, walls) {
+    for (let i = 0; i < 2; i++) {
+      this._set(this.portals[first + i], WALLS[walls[i]], (Math.random() * 2 - 1) * LIMIT);
+    }
+  }
+
+  /**
+   * Mount one portal at offset `u` along `wall`. The caller draws `u`, since the range it
+   * comes from is a placement rule (see LIMIT) rather than anything about the wall — which
+   * is also what lets the drivers stage a named wall at a named offset through this.
+   */
+  _set(portal, wall, u) {
+    const { glow } = portal.pair;
 
     portal.wall = wall;
     // Standing on the floor, so the center is half a square up.
@@ -321,13 +452,13 @@ export class Portals {
     // Out in the room rather than in the wall's plane — see PORTAL.lightOffset.
     portal.light.position.copy(portal.center).addScaledVector(wall.normal, PORTAL.lightOffset);
 
-    // Re-read here rather than only at construction, so retuning PORTAL.glow live lands
+    // Re-read here rather than only at construction, so retuning a pair's glow live lands
     // at the next round start — roughly the reach a driver has into the enemy glows,
     // which effects.js re-reads every frame. The *materials* can't follow (built at
     // import time, above), so a live retune moves the light and not the aura.
-    portal.light.color.set(PORTAL.glow.color);
-    portal.light.intensity = PORTAL.glow.intensity;
-    portal.light.distance = PORTAL.glow.distance;
+    portal.light.color.set(glow.color);
+    portal.light.intensity = glow.intensity;
+    portal.light.distance = glow.distance;
   }
 
   /**
@@ -353,6 +484,13 @@ export class Portals {
       // heading looking along that wall's inward normal). The difference is what's
       // handed to the player, so whatever they were looking at relative to the wall
       // they walked into is preserved relative to the one they come out of.
+      //
+      // **Under the placement rule this works out to exactly zero every time**, since a
+      // pair spans facing walls, whose faceYaws differ by PI — so a trip preserves the
+      // heading outright and the box wraps around instead of folding. Still derived rather
+      // than dropped: it's the placement rule that might change, and this is the geometry
+      // that shouldn't have to change with it. The driver sweeps all 12 ordered wall pairs
+      // for that reason, not just the ones a placement can reach.
       const turn = exit.wall.faceYaw + Math.PI - portal.wall.faceYaw;
       this.player.teleport(x, z, turn);
 
@@ -361,8 +499,10 @@ export class Portals {
       // which pair of walls was involved.
       if (this.onTraverse) this.onTraverse();
 
-      // One traversal per frame. The exit is outside its own trigger, so this is
-      // belt-and-braces against a future third portal rather than load-bearing today.
+      // One traversal per frame. Still belt-and-braces rather than load-bearing, even at
+      // four doorways: the exit is outside its own trigger, and no two squares can overlap
+      // while every wall carries exactly one of them. What it guards is a placement rule
+      // loosening underneath it.
       return;
     }
   }
@@ -387,10 +527,18 @@ export class Portals {
     const width = Math.max(1, Math.round(BUFFER_SIZE.x * PORTAL.view.resolution));
     const height = Math.max(1, Math.round(BUFFER_SIZE.y * PORTAL.view.resolution));
 
-    // Two extra renders is what this costs, and under a software rasterizer that cost is
-    // per fragment — so a portal behind the player must not pay it. Culled here rather
-    // than left to three, which would still have run the whole render before discarding
-    // every object in it.
+    // An extra render per visible doorway is what this costs, and under a software
+    // rasterizer that cost is per fragment — so a portal behind the player must not pay it.
+    // Culled here rather than left to three, which would still have run the whole render
+    // before discarding every object in it.
+    //
+    // **It's also why four doorways don't cost twice what two did, and the reason is the
+    // one-per-wall rule rather than anything about the previews.** A heading from the middle
+    // of the box takes in at most two walls, and each wall carries exactly one mouth, so two
+    // previews is the ceiling — measured over 16 headings it's 1 on eleven of them and 2 on
+    // five, and never 0, 3 or 4 (-viewcost.mjs censuses it). The worst case therefore *fell*
+    // when the fourth doorway was added, since three mouths could share a heading while they
+    // were free to share a wall.
     VIEW_PROJECTION.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     FRUSTUM.setFromProjectionMatrix(VIEW_PROJECTION);
 
@@ -449,9 +597,16 @@ export class Portals {
     vcam.projectionMatrixInverse.copy(this.camera.projectionMatrixInverse);
   }
 
-  /** The other one. The whole pairing rule, and why there are exactly two. */
+  /**
+   * A portal's partner: the other doorway of its own color, and the whole pairing rule.
+   *
+   * Nothing to search, because the two pairs are built as adjacent couples — flipping the
+   * low bit of an index is the partner. A third pair would be three more lines in
+   * config.js and nothing here, which is what that layout buys; an odd number of doorways
+   * is the thing it can't express, and that's the point rather than a limit.
+   */
   _exitFor(portal) {
-    return portal === this.portals[0] ? this.portals[1] : this.portals[0];
+    return this.portals[portal.index ^ 1];
   }
 
   /**

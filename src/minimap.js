@@ -50,8 +50,9 @@ export class Minimap {
    *        takes two: concatenating would allocate every frame, and the two are
    *        drawn differently anyway.
    * @param portals the live portal array (Portals.portals). A third array for the same
-   *        reason, and read for `wall.run` and `center` only — the map never asks which
-   *        leads where, since both ends are drawn identically.
+   *        reason, and read for `wall.run`, `center` and `pair` only. It never asks which
+   *        of a pair leads where — both mouths are drawn identically, because they are
+   *        identical — but it does ask which *pair*, since that's the color.
    */
   draw(player, enemies, pickups, portals) {
     this._resize();
@@ -96,7 +97,7 @@ export class Minimap {
   }
 
   /**
-   * The arena, and the two portals set into it. The only *static* geometry on this
+   * The arena, and the four portals set into it. The only *static* geometry on this
    * canvas: the walls are a fixed box of side WORLD.arenaSize and the player moves
    * around inside it, which is what turns the circle from an arbitrary window into a
    * position — being backed into a corner is now something the radar says.
@@ -129,16 +130,27 @@ export class Minimap {
     ctx.strokeStyle = MINIMAP.wallColor;
     ctx.stroke();
 
-    // Each portal drawn *over* its own stretch of wall, along that wall's run axis, so
-    // the cyan is a section of the outline rather than a mark stuck next to it — a
-    // doorway is a hole in a wall, and the map should say so. Centered on the line for
-    // the same reason, which is what leaves it reading as part of the box.
+    // Each portal drawn *over* its own stretch of wall, along that wall's run axis, so the
+    // color is a section of the outline rather than a mark stuck next to it — a doorway is
+    // a hole in a wall, and the map should say so. Centered on the line for the same
+    // reason, which is what leaves it reading as part of the box.
     //
     // No counter-rotation here either: unlike a glyph, a segment's *direction* is
     // information, and it has to lie along the wall as drawn.
+    //
+    // **Each pair in its own color, which is most of why this is worth drawing at all now
+    // that there are two of them**: four segments in one color would say where the
+    // doorways are and nothing about which leads where, where a matched color on the far
+    // side of the box *is* the exit. Chosen by comparing `portal.pair` against the config
+    // blocks, exactly as _blip() picks a drop's glyph, with blue as the fall-through for
+    // the same reason health is there — a pair added to config.js without a line here
+    // still draws something. Placement puts one doorway in each wall, so the box always
+    // reads as four sides with one colored notch each, and a pair is the two notches that
+    // match across it.
     ctx.lineWidth = MINIMAP.portalThickness;
-    ctx.strokeStyle = MINIMAP.portalColor;
     for (const portal of portals) {
+      ctx.strokeStyle = portal.pair === PORTAL.orange ? MINIMAP.portalOrange : MINIMAP.portalBlue;
+
       const hx = portal.wall.run.x * (PORTAL.size / 2);
       const hz = portal.wall.run.z * (PORTAL.size / 2);
       const dx = portal.center.x - player.position.x;

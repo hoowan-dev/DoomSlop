@@ -23,7 +23,7 @@ export class Rounds {
    *        directly rather than routed through a callback, matching
    *        EnemyManager — it already holds the player and calls takeDamage(),
    *        so a gameplay system moving health is the established shape here.
-   * @param portals moved to two new walls at every round start. Held for the same
+   * @param portals both pairs re-placed at every round start. Held for the same
    *        reason the enemies are and for the opposite reason pickups aren't: a
    *        round change *must* re-place the portals, where it must not be able to
    *        sweep the drops (see pickups.js), so this one belongs on the round

@@ -6,10 +6,25 @@ export const WORLD = {
   wallHeight: 8,
 };
 
-// Two squares of wall that lead to each other: walk into one and you come out of the
-// other, facing into the arena. Re-picked at the start of every round (rounds.js), so
-// the shortcut across the map is something to find each round rather than a fixture.
-// Sized and placed against WORLD above, which is why it sits next to it.
+// Two *pairs* of squares of wall that lead to each other: walk into one and you come out
+// of its partner, facing into the arena. Four doorways, re-picked at the start of every
+// round (rounds.js), so the shortcuts across the map are something to find each round
+// rather than fixtures. Sized and placed against WORLD above, which is why it sits next
+// to it.
+//
+// **A pair's two mouths are always in *facing* walls, and no wall ever holds more than
+// one doorway.** Between them those two rules leave place() one thing to draw: one pair
+// takes the two z walls and the other takes the two x walls. That's what makes the colors
+// worth having, and it's a stronger promise than the "opposite ends of the arena" this
+// shipped with — a doorway you can see from across the map doesn't say roughly where it
+// comes out, it says exactly: its partner is the other one of its color, in the wall
+// directly behind you, and the wall you're looking at has no second doorway in it.
+//
+// Split into a shared part and two colored pairs, the same way PICKUP is split into a
+// shared part and three faces, and for the same reason: everything physical about a
+// doorway is the same for all four of them, and a tunable that differed between the
+// pairs would be a tunable that shouldn't exist. The pairs hold a `glow` each and
+// nothing else, because the color is the whole of what differs.
 export const PORTAL = {
   // The doorway, in world units — a square standing on the floor, `size` wide and
   // `size` tall. Wide enough to hit at a run, and short enough against a
@@ -31,9 +46,11 @@ export const PORTAL = {
   // clamp in code, same as the speed ladder's ceiling.
   exitOffset: 2.4,
 
-  // Keep a portal's center this far from the corners. The aura spreads
+  // Keep a portal's center this far from the corners of its wall. The aura spreads
   // size * glow.haloScale / 2 either side of it, so this is what keeps the glow on one
-  // wall instead of being cut in half by the one beside it.
+  // wall instead of being cut in half by the one beside it. Corner clearance and nothing
+  // else: it used to do midline duty too, holding two same-colored mouths apart on a wall
+  // they shared, and no wall carries two of anything now.
   margin: 5,
 
   // How far the light stands off the wall. A point light *in* the wall's own plane
@@ -42,30 +59,28 @@ export const PORTAL = {
   // spills it onto the floor in front, which is the part you see from across the map.
   lightOffset: 0.9,
 
-  // Blue, pushed toward cyan: PICKUP.armor already owns azure, and by the note on
-  // PICKUP.boots the palette had run out of free hues. This is the deliberate bend of
-  // that rule, and it's affordable because the two are never told apart by color in
-  // the first place — one is a 3-unit square standing in a wall, the other a small
-  // cube bobbing at knee height, and nothing that matters follows from mistaking them.
-  //
-  // Read exactly like an enemy's or a drop's glow, by the same code: one block for the
-  // light and the aura so the pair can't drift apart. `haloScale` is the aura's size as
-  // a multiple of `size` and has to stay over 1 for the reason it does there — the glow
-  // is the part outside the square. `intensity` is candela at 1/d^2 against a wall
-  // `lightOffset` away and a floor about size/2 below the light, which is why it's
-  // nearer a drop's number than the boss's despite lighting a far bigger area.
-  glow: { color: 0x35e0ff, intensity: 22, distance: 14, haloScale: 2.2, haloOpacity: 0.7 },
-
   // The perspective preview painted inside the square: the far side's walls, seen from
   // where the player's eye would be if the two doorways were one hole. Three numbers,
   // and each is a different kind of thing.
   view: {
-    // Fraction of the drawing buffer each portal's preview is rendered at. Two extra
-    // renders per frame is what this feature costs, and under a software rasterizer the
-    // cost is per *fragment* (the same finding EFFECTS.glowPool records), so this is the
-    // knob to turn down if a machine struggles — measured on a full field at 1280x800,
-    // the fill is 3.9ms/frame at 0.5 and 13.7ms at 1, near enough exactly quadratic, and
-    // free at 480x300 either way.
+    // Fraction of the drawing buffer each portal's preview is rendered at. An extra
+    // render per *visible* portal is what this feature costs, and under a software
+    // rasterizer the cost is per fragment (the same finding EFFECTS.glowPool records), so
+    // this is the knob to turn down if a machine struggles — measured on a full field at
+    // 1280x800 with two doorways drawn, the fill is 3.2ms/frame at 0.5 and 10.8ms at 1,
+    // i.e. ~1.6ms per preview at the shipped value, and free at 480x300 either way.
+    //
+    // **Four doorways do not cost twice what two did, and what caps it is the one-doorway-
+    // per-wall rule rather than the frustum cull itself.** A heading from the middle of the
+    // box takes in at most two walls, and each wall holds exactly one mouth, so two previews
+    // is the ceiling however many doorways exist — a census of 16 headings (-viewcost.mjs)
+    // comes out 1 preview on eleven of them and 2 on five, never 0, 3 or 4. The mean of 1.31
+    // of 4 is 33%, which is just the ~102-degree horizontal FOV's share of the circle; the
+    // *ceiling* is the interesting half, and it came down from three when the fourth doorway
+    // landed, because three mouths could share a heading while they were free to share a
+    // wall. Beware the tempting story that the colors are what does this — "looking at one
+    // pair puts the other behind you" is false, and was measurably false under the older
+    // opposite-ends rule too.
     //
     // **Half resolution is not free of artifacts, and it's worth knowing which one you're
     // buying.** The shell is flat panels and a grid, and the grid is the whole perspective
@@ -92,14 +107,52 @@ export const PORTAL = {
     // ~1.6 the fog caps it and there's nothing more to win.
     brightness: 1,
 
-    // How much of `glow.color` is mixed over the preview. Not just decoration — it's
-    // what keeps a portal recognizable as a portal from across the arena, where the
-    // preview is a few pixels of haze and would otherwise be invisible against the wall
-    // it's cut into. It means what it says only because the mix happens *after* the sRGB
-    // encode (see viewMaterial in portals.js): 0.22 keeps 78% of the preview's contrast,
-    // where the same number applied in linear space is twenty times the picture. At 1 the
-    // square is the flat cyan panel this replaced.
+    // How much of the pair's own `glow.color` is mixed over the preview. Not just
+    // decoration, and now doing two jobs: it's what keeps a portal recognizable as a
+    // portal from across the arena, where the preview is a few pixels of haze and would
+    // otherwise be invisible against the wall it's cut into — and it's the only thing
+    // that says which *pair* a doorway belongs to at that distance, since the aura and
+    // the light have hazed into the wall by then and the picture inside the square is the
+    // same room either way. One amount for both pairs, since the two colors are the same
+    // saturation; it's the shared part of the block for that reason.
+    //
+    // It means what it says only because the mix happens *after* the sRGB encode (see
+    // viewMaterial in portals.js): 0.22 keeps 78% of the preview's contrast, where the
+    // same number applied in linear space is twenty times the picture. At 1 the square is
+    // the flat colored panel this replaced.
     tint: 0.22,
+  },
+
+  // The two pairs, which differ in nothing but their hue. Each carries a whole `glow` in
+  // the shape ENEMY, BOSS and every PICKUP face carry, so one block feeds the light, the
+  // aura and the preview's tint and the three can't drift apart. `haloScale` is the
+  // aura's size as a multiple of `size` and has to stay over 1 for the reason it does
+  // there — the glow is the part outside the square. `intensity` is candela at 1/d^2
+  // against a wall `lightOffset` away and a floor about size/2 below the light, which is
+  // why it's nearer a drop's number than the boss's despite lighting a far bigger area.
+  //
+  // **Everything after the color is deliberately equal between the two, and haloScale
+  // structurally has to be**: one aura geometry serves all four doorways (see portals.js),
+  // so a pair with its own scale would silently be drawn at the other's. The rest is the
+  // same argument both enemy tiers make for holding the same haloScale — these are the
+  // same kind of thing at the same size lighting the same walls, and only the hue is
+  // supposed to say which of the two shortcuts you're looking at.
+  //
+  // Both hues sit outside the five-color palette the drops and the enemies divide up (see
+  // PICKUP.boots), and that was already true of one of them: cyan was the deliberate bend
+  // of that rule, affordable because a doorway and an armor cube are never told apart *by
+  // color* — one is a 3-unit square standing in a wall, the other a small cube bobbing at
+  // knee height. Orange spends the same excuse against the enemies' red, and it's the
+  // last time it can be spent: a portal is only ever welded into the arena's boundary,
+  // where nothing that moves is ever drawn, so both pairs are already told apart from
+  // everything else by *where they are* before hue comes into it. All the hue has left to
+  // do is tell the two pairs apart from each other, and warm against cold is the widest
+  // that gets.
+  blue: {
+    glow: { color: 0x35e0ff, intensity: 22, distance: 14, haloScale: 2.2, haloOpacity: 0.7 },
+  },
+  orange: {
+    glow: { color: 0xff8a2b, intensity: 22, distance: 14, haloScale: 2.2, haloOpacity: 0.7 },
   },
 };
 
@@ -490,17 +543,26 @@ export const MINIMAP = {
   // A portal's span, drawn over the wall it's mounted in — the doorway is a gap in a
   // wall, so it's the same line in a different color rather than a mark beside it.
   //
-  // The same cyan PORTAL.glow.color is, written out again in this file's CSS-string
+  // One per pair, and this is the map's whole reason for being worth looking at now that
+  // there are two of them: four segments in one color would say where the doorways are
+  // and nothing about which leads where, where two cyan and two orange say it at a glance
+  // — a matched color on the far side of the box *is* the exit. Named for the pairs in
+  // PORTAL rather than for their hues, so renaming a color is one file's business;
+  // minimap.js picks between them by comparing `portal.pair` against those blocks, the
+  // same way _blip() picks a drop's glyph.
+  //
+  // Both are their pair's PORTAL glow color written out again in this file's CSS-string
   // convention rather than converted from the 0x literal at runtime: a radar blip and a
   // doorway lit across the arena have to be recognisably the same thing, so if one moves
-  // the other has to follow. Note this is the one hue on the canvas that isn't in the
-  // five-color palette the drops and enemies divide up — see PORTAL.glow, which makes
+  // the other has to follow. Note these are the two hues on the canvas that aren't in the
+  // five-color palette the drops and enemies divide up — see PORTAL's pairs, which make
   // the same exception for the same reason.
   //
-  // Thicker than the wall it covers rather than longer than it: PORTAL.size is 3 units
+  // Thicker than the wall they cover rather than longer than it: PORTAL.size is 3 units
   // of a 60-unit wall, which is ~7px here, and stretching it would put the doorway's
   // *edges* somewhere they aren't. Weight is the thing that can be exaggerated for free.
-  portalColor: '#35e0ff',
+  portalBlue: '#35e0ff',
+  portalOrange: '#ff8a2b',
   portalThickness: 3.5,
 
   coneRange: 26, // how far the view cone reaches, in world units
