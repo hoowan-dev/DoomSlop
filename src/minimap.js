@@ -1,4 +1,4 @@
-import { MINIMAP, PICKUP } from './config.js';
+import { MINIMAP, PICKUP, PORTAL, WORLD } from './config.js';
 
 // Top-down radar in the corner of the HUD. Drawn on its own 2D canvas rather
 // than in the scene — three.js never sees it, matching the rest of the HUD.
@@ -49,8 +49,11 @@ export class Minimap {
    *        rather than one joined list, for the same reason effects.updateGlows
    *        takes two: concatenating would allocate every frame, and the two are
    *        drawn differently anyway.
+   * @param portals the live portal array (Portals.portals). A third array for the same
+   *        reason, and read for `wall.run` and `center` only — the map never asks which
+   *        leads where, since both ends are drawn identically.
    */
-  draw(player, enemies, pickups) {
+  draw(player, enemies, pickups, portals) {
     this._resize();
 
     const ctx = this.ctx;
@@ -77,14 +80,75 @@ export class Minimap {
 
     ctx.translate(radius, radius);
 
-    // Cone first, so enemy dots sit on top of it rather than under it. Drops go
-    // under the enemies deliberately: they don't move, so one being covered for a
-    // moment costs nothing, where a threat hidden under a medkit is the arrangement
-    // that gets the player killed.
+    // Walls first of all, under even the cone: they're the room everything else is
+    // standing in, and the cone is a haze thrown across it. Then the cone, so enemy
+    // dots sit on top of it rather than under it. Drops go under the enemies
+    // deliberately: they don't move, so one being covered for a moment costs nothing,
+    // where a threat hidden under a medkit is the arrangement that gets the player
+    // killed.
+    this._drawWalls(ctx, scale, player, portals);
     this._drawCone(ctx, scale);
     this._drawPickups(ctx, scale, player, pickups);
     this._drawEnemies(ctx, scale, player, enemies);
     this._drawPlayer(ctx);
+
+    ctx.restore();
+  }
+
+  /**
+   * The arena, and the two portals set into it. The only *static* geometry on this
+   * canvas: the walls are a fixed box of side WORLD.arenaSize and the player moves
+   * around inside it, which is what turns the circle from an arbitrary window into a
+   * position — being backed into a corner is now something the radar says.
+   *
+   * Plotted through the same single ctx.rotate(player.yaw) with raw world offsets that
+   * the enemy dots and the drop glyphs use, and for the same reason: the map turns and
+   * the things on it don't, so anything that needs to stay upright is the exception
+   * rather than the rule. A square has nothing to keep upright — it turns with the room,
+   * which is the whole point of drawing it — so unlike a glyph it takes no
+   * counter-rotation.
+   *
+   * The whole box is stroked rather than clipped to the visible arc: the circular clip
+   * already set on the context handles the three quarters of it that are off the map, and
+   * working out which walls are in range would cost more than one rect() call.
+   */
+  _drawWalls(ctx, scale, player, portals) {
+    const half = WORLD.arenaSize / 2;
+
+    ctx.save();
+    ctx.rotate(player.yaw);
+
+    ctx.beginPath();
+    ctx.rect(
+      (-half - player.position.x) * scale,
+      (-half - player.position.z) * scale,
+      WORLD.arenaSize * scale,
+      WORLD.arenaSize * scale
+    );
+    ctx.lineWidth = MINIMAP.wallThickness;
+    ctx.strokeStyle = MINIMAP.wallColor;
+    ctx.stroke();
+
+    // Each portal drawn *over* its own stretch of wall, along that wall's run axis, so
+    // the cyan is a section of the outline rather than a mark stuck next to it — a
+    // doorway is a hole in a wall, and the map should say so. Centered on the line for
+    // the same reason, which is what leaves it reading as part of the box.
+    //
+    // No counter-rotation here either: unlike a glyph, a segment's *direction* is
+    // information, and it has to lie along the wall as drawn.
+    ctx.lineWidth = MINIMAP.portalThickness;
+    ctx.strokeStyle = MINIMAP.portalColor;
+    for (const portal of portals) {
+      const hx = portal.wall.run.x * (PORTAL.size / 2);
+      const hz = portal.wall.run.z * (PORTAL.size / 2);
+      const dx = portal.center.x - player.position.x;
+      const dz = portal.center.z - player.position.z;
+
+      ctx.beginPath();
+      ctx.moveTo((dx - hx) * scale, (dz - hz) * scale);
+      ctx.lineTo((dx + hx) * scale, (dz + hz) * scale);
+      ctx.stroke();
+    }
 
     ctx.restore();
   }

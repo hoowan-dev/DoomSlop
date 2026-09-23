@@ -256,6 +256,28 @@ export class Sound {
   }
 
   /**
+   * Stepping through a portal: a rising swoop with a rush of air inside it.
+   *
+   * Every other effect here falls, and that's what this one is trading on. A shot, a
+   * kill and a hit are all things that finished happening, so they decay; being moved
+   * across the arena is a thing that *arrives*, and a sweep upward is the whole of
+   * what makes half a second of synthesis read as science fiction rather than as
+   * another impact. The detuned pair supplies the shimmer and the tracking bandpass
+   * supplies the air, which is why neither layer is worth having alone — a bare sweep
+   * is a whistle and bare noise is a hiss.
+   *
+   * Raised from main.js off portals.onTraverse, the same shape as every other sound
+   * here: portals.js reports a traversal and doesn't know this exists.
+   */
+  teleport() {
+    const s = SOUND.teleport;
+    for (const detune of [-s.detune, s.detune]) {
+      this._swoop(s.pitchFrom, s.pitchTo, detune, s.attack, s.duration, s.gain);
+    }
+    this._airSweep(s.noiseFrom, s.noiseTo, s.noiseQ, s.attack, s.duration, s.noiseGain);
+  }
+
+  /**
    * UI click for the pause overlay. Rising when resuming, falling when pausing —
    * the same sound inverted, so the two read as a matched pair instead of as
    * unrelated beeps.
@@ -326,6 +348,76 @@ export class Sound {
     osc.connect(env).connect(this.master);
     osc.start(t);
     osc.stop(t + duration);
+  }
+
+  /**
+   * A pitch-swept voice that swells: _tone()'s frequency ramp under _voice()'s
+   * envelope. It exists because neither of those two could serve — _tone() opens at
+   * full level, which puts a crack on the front of a sound whose subject is the
+   * *rise*, and _voice() holds one pitch, which is the one thing a swoop isn't. Two
+   * of these detuned against each other are the tonal half of teleport().
+   *
+   * The wave is a triangle rather than a sawtooth. A saw is the more obvious choice
+   * for machinery, but this climbs nearly three octaves and lands at 1.5kHz, where a
+   * saw's harmonic stack is simply shrill — and the grit it would have contributed is
+   * already coming from _airSweep() underneath, where it can be filtered.
+   */
+  _swoop(from, to, detune, attack, duration, gain) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(from, t);
+    // Exponential, so the climb is even in pitch rather than crawling through the
+    // bottom octave and then leaping the top one.
+    osc.frequency.exponentialRampToValueAtTime(to, t + duration);
+    // Kept on the node rather than folded into the frequency, like _voice()'s, so the
+    // config number stays readable as an interval.
+    osc.detune.value = detune;
+
+    const env = this.ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.linearRampToValueAtTime(gain, t + attack);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+
+    osc.connect(env).connect(this.master);
+    osc.start(t);
+    osc.stop(t + duration);
+  }
+
+  /**
+   * White noise through a bandpass that sweeps with the tone above it — the sound of
+   * air moving, rather than the lowpassed thump _noiseBurst() puts on an impact. The
+   * two differ in every part: bandpass instead of lowpass so there's a *pitch* to
+   * track, a swept center frequency rather than a fixed cutoff, and the same swelling
+   * envelope as _swoop() instead of a percussive one. A band this wide (Q of ~1.4)
+   * is what keeps it a rush rather than a second whistle competing with the tone.
+   */
+  _airSweep(from, to, q, attack, duration, gain) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+
+    const band = this.ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.Q.value = q;
+    band.frequency.setValueAtTime(from, t);
+    band.frequency.exponentialRampToValueAtTime(to, t + duration);
+
+    const env = this.ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.linearRampToValueAtTime(gain, t + attack);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+
+    src.connect(band).connect(env).connect(this.master);
+
+    // Random start offset for the same reason _noiseBurst() uses one: walking back
+    // through a portal shouldn't replay an identical fragment of static.
+    const offset = Math.random() * Math.max(0, this.noise.duration - duration);
+    src.start(t, offset, duration);
   }
 
   /** Filtered white noise, layered under a tone to give it an attack. */

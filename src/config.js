@@ -55,6 +55,52 @@ export const PORTAL = {
   // `lightOffset` away and a floor about size/2 below the light, which is why it's
   // nearer a drop's number than the boss's despite lighting a far bigger area.
   glow: { color: 0x35e0ff, intensity: 22, distance: 14, haloScale: 2.2, haloOpacity: 0.7 },
+
+  // The perspective preview painted inside the square: the far side's walls, seen from
+  // where the player's eye would be if the two doorways were one hole. Three numbers,
+  // and each is a different kind of thing.
+  view: {
+    // Fraction of the drawing buffer each portal's preview is rendered at. Two extra
+    // renders per frame is what this feature costs, and under a software rasterizer the
+    // cost is per *fragment* (the same finding EFFECTS.glowPool records), so this is the
+    // knob to turn down if a machine struggles — measured on a full field at 1280x800,
+    // the fill is 3.9ms/frame at 0.5 and 13.7ms at 1, near enough exactly quadratic, and
+    // free at 480x300 either way.
+    //
+    // **Half resolution is not free of artifacts, and it's worth knowing which one you're
+    // buying.** The shell is flat panels and a grid, and the grid is the whole perspective
+    // read — so what half a pixel loses is the far-field floor lines, which stop resolving
+    // and come out as a speckle. Looking into a doorway that's clean, because the lines
+    // that matter are the near ones; looking *across* one at a grazing angle the visible
+    // band of floor is compressed and it reads as gravel. A third of the frame is too much
+    // to pay for it, and the arena's own floor aliases at grazing angles too.
+    resolution: 0.5,
+
+    // Multiplier on the shell's surface colors in the linear working space, standing in
+    // for the arena's two lights, which the shell deliberately doesn't have (see
+    // createShell in world.js). **1 is the identity — the preview is deliberately
+    // brighter than the room it's a picture of — and matching the room instead was
+    // measured and rejected.** The photometric answer is 0.41: rendering the shell and
+    // the lit arena from the same camera and dividing says the lights are worth that
+    // much on the floor. At 0.41 the floor sits at a linear 0.0099 against a fog color
+    // of 0.0069, which is about four display levels apart — the arena's own floor and
+    // far wall are exactly that hard to tell apart, and the direct view gets away with
+    // it because per-face N·L and the key light's gradient carry the read. A flat
+    // multiplier has neither, so matching the average produced a square as subtle as the
+    // arena is, in a doorway a fiftieth of its area, and the preview was indistinguishable
+    // from the flat panel it replaced. Turned up until the converging grid reads; past
+    // ~1.6 the fog caps it and there's nothing more to win.
+    brightness: 1,
+
+    // How much of `glow.color` is mixed over the preview. Not just decoration — it's
+    // what keeps a portal recognizable as a portal from across the arena, where the
+    // preview is a few pixels of haze and would otherwise be invisible against the wall
+    // it's cut into. It means what it says only because the mix happens *after* the sRGB
+    // encode (see viewMaterial in portals.js): 0.22 keeps 78% of the preview's contrast,
+    // where the same number applied in linear space is twenty times the picture. At 1 the
+    // square is the flat cyan panel this replaced.
+    tint: 0.22,
+  },
 };
 
 export const PLAYER = {
@@ -432,6 +478,31 @@ export const MINIMAP = {
   // they appear just inside the edge rather than popping in from nowhere
   background: 'rgba(12, 14, 20, 0.55)',
 
+  // The arena's four walls, as one stroked square of side WORLD.arenaSize. The only
+  // *static* thing on this canvas, and the only reason the range above reads as a
+  // distance rather than as an arbitrary circle: the corner you're backed into is
+  // something the radar can now tell you. Dim on purpose — it's the frame the rest of
+  // the map is read inside, not a thing to look at — and thin enough that a dot sitting
+  // against it still reads as a dot.
+  wallColor: 'rgba(150, 170, 200, 0.6)',
+  wallThickness: 1.5, // CSS pixels
+
+  // A portal's span, drawn over the wall it's mounted in — the doorway is a gap in a
+  // wall, so it's the same line in a different color rather than a mark beside it.
+  //
+  // The same cyan PORTAL.glow.color is, written out again in this file's CSS-string
+  // convention rather than converted from the 0x literal at runtime: a radar blip and a
+  // doorway lit across the arena have to be recognisably the same thing, so if one moves
+  // the other has to follow. Note this is the one hue on the canvas that isn't in the
+  // five-color palette the drops and enemies divide up — see PORTAL.glow, which makes
+  // the same exception for the same reason.
+  //
+  // Thicker than the wall it covers rather than longer than it: PORTAL.size is 3 units
+  // of a 60-unit wall, which is ~7px here, and stretching it would put the doorway's
+  // *edges* somewhere they aren't. Weight is the thing that can be exaggerated for free.
+  portalColor: '#35e0ff',
+  portalThickness: 3.5,
+
   coneRange: 26, // how far the view cone reaches, in world units
   coneColor: 'rgba(200, 220, 255, 0.16)',
 
@@ -568,6 +639,34 @@ export const SOUND = {
     attack: 0.12, // long enough that there's no click; this one has no transient
     duration: 0.9,
     gain: 0.06,
+  },
+
+  // Stepping through a portal. The one sound in the game that sweeps *up*, and that
+  // is the whole of what makes it read as science fiction rather than as another
+  // impact: `shoot`, `kill` and `damage` all fall, because a thing that happened is
+  // over, where a thing that *took* you somewhere has to arrive. Kept under the 0.5s
+  // a traversal feels like it lasts, since nothing gates a second one — walk back
+  // through and this has to have finished.
+  //
+  // Two layers, and neither works alone. The tone pair is the sweep; the noise is the
+  // air going with it, its bandpass tracking the pitch so the two read as one object
+  // moving rather than as a whistle over a hiss. `detune` is far wider than `pickup`'s
+  // 7 cents because these two voices are sweeping three octaves in half a second —
+  // at 7 cents the beating is over before it's audible, where at 24 the pair shimmers
+  // the whole way up. `gain` is per voice and there are two, so the effective ceiling
+  // is masterVolume * gain * 2 = 0.11, deliberately under `damage`: a shortcut you
+  // chose to take shouldn't be as loud as being hit.
+  teleport: {
+    duration: 0.5,
+    attack: 0.07, // swells in, like `pickup` and unlike everything percussive here
+    gain: 0.16, // per voice, of two
+    pitchFrom: 190,
+    pitchTo: 1500,
+    detune: 24, // cents, applied +/- to the pair
+    noiseFrom: 320, // bandpass center, swept with the tone
+    noiseTo: 5200,
+    noiseGain: 0.3,
+    noiseQ: 1.4, // low enough to stay a rush of air rather than a second whistle
   },
 
   // The looping music bed — assets/audio/doom.mp3, the one audio file in the

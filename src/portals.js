@@ -1,14 +1,18 @@
 import * as THREE from 'three';
 import { PORTAL, WORLD } from './config.js';
 import { HALO_TEXTURE } from './glow.js';
+import { createShell } from './world.js';
 
 // The two portals: squares of wall that lead to each other. Walk into one and you come
-// out of the other, facing into the arena with the heading you walked in with.
+// out of the other, facing into the arena with the heading you walked in with. Each one
+// shows a live perspective view of where it leads, so the square is a window rather
+// than a colored panel with a rule attached to it.
 //
 // Placement is asked for by rounds.js at the start of every round; the traversal test
-// is ticked by main.js right after player.update(). Like every other system here it
-// reports nothing and knows nothing about rounds, score or the HUD — the only thing it
-// reaches into is the player, and only to move them.
+// is ticked by main.js right after player.update() and the previews are rendered by it
+// just before the frame is drawn. Like every other system here it knows nothing about
+// rounds, score or the HUD — it reaches into the player only to move them, and reports
+// a traversal out through `onTraverse` so main.js can decide that means a sound.
 
 const HALF = WORLD.arenaSize / 2;
 
@@ -38,11 +42,117 @@ const CORE_GEOMETRY = new THREE.PlaneGeometry(PORTAL.size, PORTAL.size);
 const AURA_SIZE = PORTAL.size * PORTAL.glow.haloScale;
 const AURA_GEOMETRY = new THREE.PlaneGeometry(AURA_SIZE, AURA_SIZE);
 
-// Unlit, so the doorway is a hole of light rather than a blue patch of wall that goes
-// dark when nothing is glowing near it. Nothing here is a hit target: the arena's
-// `solids` are what weapon.js raycasts, and a portal is deliberately not in that list,
-// so shots pass through the square exactly as the player does.
-const CORE_MATERIAL = new THREE.MeshBasicMaterial({ color: PORTAL.glow.color });
+/**
+ * The far side's walls, with nothing in them and no lights at all — built once here and
+ * shared by both portals, since what each one *shows* differs only in where it's looked
+ * at from. See createShell() in world.js for why it's a separate Scene (the arena's
+ * light count is compiled into every material and must not move) and why it's unlit.
+ *
+ * Read at import time like the materials below, so a driver retuning PORTAL.view.brightness
+ * live moves nothing. The tint next to it *is* live, which is the seam worth knowing:
+ * one is baked into a scene's materials, the other is a uniform written every frame.
+ */
+const SHELL = createShell(PORTAL.view.brightness);
+
+// Scratch for renderViews(), at module scope for the usual reason — it runs every frame,
+// twice.
+const FRUSTUM = new THREE.Frustum();
+const VIEW_PROJECTION = new THREE.Matrix4();
+const CULL_SPHERE = new THREE.Sphere();
+const BUFFER_SIZE = new THREE.Vector2();
+
+// A sphere that contains both of a portal's quads: half the diagonal of the larger one.
+// Generous on purpose — a portal only clipping the edge of the screen still has to have
+// its preview drawn, and the cost of being wrong the other way is a visibly blank window.
+const CULL_RADIUS = (AURA_SIZE * Math.SQRT2) / 2;
+
+/**
+ * The half-turn in the middle of the view transform (see _aimView). One constant rather
+ * than a makeRotationY() per frame.
+ */
+const FLIP = new THREE.Matrix4().makeRotationY(Math.PI);
+
+/**
+ * The core quad's material: the preview, tinted. **One per portal, unlike every other
+ * asset in this file**, because each holds its own render target in `tView` — that's
+ * the one thing the two can't share, and it's why this is a factory rather than a const.
+ *
+ * Two things in here are less obvious than they look:
+ *
+ * - **The UVs are screen-space, not the quad's own.** Clip position is carried through as
+ *   a varying and divided by `w` in the fragment shader, which makes the doorway a
+ *   *window*: the preview is rendered with the player's own projection, so sampling it at
+ *   the fragment's screen position shows exactly what a hole in the wall would. Mapping
+ *   the quad's 0..1 UVs over it instead would squeeze a 75-degree view into a 3-unit
+ *   square and read as a fisheye television hung on the wall. The perspective divide is
+ *   what keeps it correct at an angle — interpolating the divided value would shear it.
+ * - **The output conversions have to be written out.** A WebGLRenderTarget holds linear
+ *   values (the renderer skips output encoding when drawing into one) and a ShaderMaterial
+ *   gets no conversion for free, so without the last two includes the preview comes out
+ *   visibly darker than the wall around it.
+ * - **The tint is mixed *after* that encode, and in linear space it does not work at all.**
+ *   This arena is dark: a floor sits at a linear 0.015 and the fog it fades into at 0.007,
+ *   so the whole preview lives inside a range of about 0.01 — while 0.22 of a saturated
+ *   cyan is 0.19. Mixed before the encode, the tint is twenty times the picture and the
+ *   square comes out a flat panel at any amount worth seeing. After it, both sides of the
+ *   mix are display values in 0..1 and the amount is what it claims to be: a 0.22 tint
+ *   keeps 78% of the preview's contrast. `uTint` stays a THREE.Color in the working space
+ *   like every other color in the game, and `linearToOutputTexel` (three defines it in the
+ *   fragment prefix for any non-raw material) is what brings it over to meet the picture.
+ *
+ * Fog is included for the same reason the shell has its own copy of it: the preview's fog
+ * covers far-side distance, and this covers the distance from the doorway to the eye. Left
+ * out, a portal across the arena stays crisp inside a wall that has hazed away.
+ */
+function viewMaterial(texture) {
+  const uniforms = THREE.UniformsUtils.clone(THREE.UniformsLib.fog);
+  uniforms.tView = { value: texture };
+  uniforms.uTint = { value: new THREE.Color(PORTAL.glow.color) };
+  uniforms.uTintAmount = { value: PORTAL.view.tint };
+
+  return new THREE.ShaderMaterial({
+    uniforms,
+    fog: true, // defines USE_FOG, which the chunks below are all guarded on
+    vertexShader: /* glsl */ `
+      varying vec4 vPortalClip;
+
+      #include <fog_pars_vertex>
+
+      void main() {
+        vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+        gl_Position = projectionMatrix * mvPosition;
+        vPortalClip = gl_Position;
+
+        #include <fog_vertex>
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D tView;
+      uniform vec3 uTint;
+      uniform float uTintAmount;
+
+      varying vec4 vPortalClip;
+
+      #include <fog_pars_fragment>
+
+      void main() {
+        vec2 uv = ( vPortalClip.xy / vPortalClip.w ) * 0.5 + 0.5;
+        gl_FragColor = vec4( texture2D( tView, uv ).rgb, 1.0 );
+
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+
+        gl_FragColor.rgb = mix(
+          gl_FragColor.rgb,
+          linearToOutputTexel( vec4( uTint, 1.0 ) ).rgb,
+          uTintAmount
+        );
+
+        #include <fog_fragment>
+      }
+    `,
+  });
+}
 
 /**
  * The aura, over the same texture every halo in the game uses — but as a plane rather
@@ -64,9 +174,28 @@ const AURA_MATERIAL = new THREE.MeshBasicMaterial({
 });
 
 export class Portals {
-  constructor(scene, player) {
+  /**
+   * `renderer` and `camera` are here only for the previews — a portal needs the player's
+   * own projection to render a view that lines up as a window, and somewhere to render it
+   * to. Nothing else in this file touches either.
+   */
+  constructor(scene, player, renderer, camera) {
     this.scene = scene;
     this.player = player;
+    this.renderer = renderer;
+    this.camera = camera;
+
+    // The shell is module state, shared by both portals — hung on the instance so a
+    // driver can assert what's in it (walls only, no lights) without importing it.
+    this.shell = SHELL;
+
+    /**
+     * Raised after a traversal, zero-argument, like player.onHeal. main.js attaches the
+     * teleport sound to it. A hook rather than an import of sound.js for the reason every
+     * other system here has one: this module reports what happened and main.js decides
+     * what it means.
+     */
+    this.onTraverse = null;
 
     /**
      * Exactly two, built once here and moved on every placement rather than rebuilt.
@@ -85,14 +214,50 @@ export class Portals {
   _build() {
     const group = new THREE.Group();
 
-    const core = new THREE.Mesh(CORE_GEOMETRY, CORE_MATERIAL);
+    // Sized in renderViews() from the live drawing buffer rather than here, so a window
+    // resize needs no seam in main.js — there's already a per-frame pass that knows the
+    // right number. 1x1 until then; nothing samples it before the first render.
+    //
+    // **HalfFloatType is not an upgrade, it's the difference between a picture and a flat
+    // panel.** A render target holds *linear* values — three forces the working color
+    // space when drawing into one (there's no output encoding pass) — and this arena is
+    // dark: its floor sits at a linear 0.010 and its walls at 0.007, which an 8-bit target
+    // rounds to bytes 2 and 3 against a background of 2. The entire palette collapses into
+    // two levels and the preview comes out a uniform smudge that a screenshot can't
+    // distinguish from the cyan square it replaced. Half floats cost 2 bytes a channel at
+    // half resolution, which is nothing, and the sRGB curve is then applied on the way out
+    // by the fragment shader (see viewMaterial) where there's precision left to spend.
+    const target = new THREE.WebGLRenderTarget(1, 1, {
+      type: THREE.HalfFloatType,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+    });
+
+    // The eye the preview is rendered from: the player's camera, reflected through the
+    // pair of doorways. matrixAutoUpdate off because _aimView() writes matrixWorld
+    // outright — with it on, updateMatrix() would recompose `matrix` from an untouched
+    // position/quaternion and the renderer would copy *that* over the view we just built.
+    // matrixWorldAutoUpdate stays on, which is what gets matrixWorldInverse refreshed
+    // from what we wrote.
+    const vcam = new THREE.PerspectiveCamera();
+    vcam.matrixAutoUpdate = false;
+
+    const core = new THREE.Mesh(CORE_GEOMETRY, viewMaterial(target.texture));
     const aura = new THREE.Mesh(AURA_GEOMETRY, AURA_MATERIAL);
     // Just off the wall, in the group's local frame — which points along the wall's
     // inward normal once the group is turned (see _set). Without this they'd be
-    // coplanar with the wall and z-fight it. The aura in front of the core for the
-    // same reason, and because additive-over-solid is the order that reads.
-    core.position.z = 0.02;
-    aura.position.z = 0.04;
+    // coplanar with the wall and z-fight it.
+    //
+    // **The aura is behind the core, and that ordering is the whole reason the preview is
+    // visible at all.** It's an additive cyan quad 2.2x the doorway at 0.7 opacity, so
+    // drawn over the window it saturates every pixel of it and the portal goes back to
+    // being the flat panel it was before this existed. Behind it, the opaque core writes
+    // depth first and the aura's middle is depth-rejected, leaving only the overhang past
+    // the square — which is exactly the arrangement that makes an enemy's halo a halo
+    // rather than a blob painted over the body (see enemies.js). Same trick, and here it's
+    // load-bearing twice over.
+    aura.position.z = 0.02;
+    core.position.z = 0.04;
     group.add(core, aura);
     this.scene.add(group);
 
@@ -104,7 +269,19 @@ export class Portals {
     const light = new THREE.PointLight(PORTAL.glow.color, PORTAL.glow.intensity, PORTAL.glow.distance);
     this.scene.add(light);
 
-    return { group, light, wall: null, center: new THREE.Vector3() };
+    return {
+      group,
+      core,
+      light,
+      target,
+      vcam,
+      wall: null,
+      center: new THREE.Vector3(),
+      // The doorway's own frame and its inverse, rebuilt on every placement. See
+      // _aimView() for what they're multiplied into.
+      frame: new THREE.Matrix4(),
+      frameInverse: new THREE.Matrix4(),
+    };
   }
 
   /**
@@ -133,6 +310,13 @@ export class Portals {
 
     portal.group.position.copy(portal.center);
     portal.group.rotation.y = wall.faceYaw;
+
+    // The doorway as a coordinate frame: the same rotation the quads get, at the same
+    // place. Rebuilt here rather than derived from group.matrixWorld, which three only
+    // refreshes during render() — the same trap the matrixWorld invariant records for
+    // raycasting, and one a preview aimed on the first frame after a placement would hit.
+    portal.frame.makeRotationY(wall.faceYaw).setPosition(portal.center);
+    portal.frameInverse.copy(portal.frame).invert();
 
     // Out in the room rather than in the wall's plane — see PORTAL.lightOffset.
     portal.light.position.copy(portal.center).addScaledVector(wall.normal, PORTAL.lightOffset);
@@ -172,10 +356,97 @@ export class Portals {
       const turn = exit.wall.faceYaw + Math.PI - portal.wall.faceYaw;
       this.player.teleport(x, z, turn);
 
+      // After the move, so a handler reading the player sees where they arrived. Nothing
+      // is passed: main.js turns it into a sound, and neither end of that needs to know
+      // which pair of walls was involved.
+      if (this.onTraverse) this.onTraverse();
+
       // One traversal per frame. The exit is outside its own trigger, so this is
       // belt-and-braces against a future third portal rather than load-bearing today.
       return;
     }
+  }
+
+  /**
+   * Draw each portal's preview into its own target. Called from main.js immediately before
+   * the frame is rendered, and outside the running check, so the doorways keep showing the
+   * far side behind the pause overlay rather than going flat — the same call the glows and
+   * the minimap get, for the same reason.
+   *
+   * It must run *after* player.update(): the view is the player's own camera pushed through
+   * the pair of doorways, so a preview aimed before the move would be a frame behind the
+   * wall it's painted on, which reads as the window sliding as you walk.
+   */
+  renderViews() {
+    const { renderer, camera } = this;
+
+    // Half of whatever the canvas is actually drawing at, pixel ratio included. Read per
+    // frame rather than wired to a resize handler, which is what keeps this feature out of
+    // main.js's setSize path entirely.
+    renderer.getDrawingBufferSize(BUFFER_SIZE);
+    const width = Math.max(1, Math.round(BUFFER_SIZE.x * PORTAL.view.resolution));
+    const height = Math.max(1, Math.round(BUFFER_SIZE.y * PORTAL.view.resolution));
+
+    // Two extra renders is what this costs, and under a software rasterizer that cost is
+    // per fragment — so a portal behind the player must not pay it. Culled here rather
+    // than left to three, which would still have run the whole render before discarding
+    // every object in it.
+    VIEW_PROJECTION.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    FRUSTUM.setFromProjectionMatrix(VIEW_PROJECTION);
+
+    for (const portal of this.portals) {
+      CULL_SPHERE.center.copy(portal.center);
+      CULL_SPHERE.radius = CULL_RADIUS;
+      if (!FRUSTUM.intersectsSphere(CULL_SPHERE)) continue;
+
+      if (portal.target.width !== width || portal.target.height !== height) {
+        portal.target.setSize(width, height);
+      }
+
+      this._aimView(portal);
+      renderer.setRenderTarget(portal.target);
+      renderer.render(SHELL, portal.vcam);
+    }
+
+    // Back to the canvas, or main.js's own render would land in whichever target went
+    // last. Null rather than a saved value: nothing here is ever called mid-target.
+    renderer.setRenderTarget(null);
+  }
+
+  /**
+   * Put `portal`'s virtual camera where the player's eye would be if the two doorways were
+   * one hole in the wall.
+   *
+   * The transform is `exit.frame * Ry(PI) * entry.frame^-1`, applied to the player's camera:
+   * out of the entry doorway's frame, turned to face the other way, and into the exit
+   * doorway's. **Its rotation part is exactly Ry(turn) for the same `turn` update() hands
+   * to player.teleport()** — Ry(exitYaw) * Ry(PI) * Ry(-entryYaw) — which is what makes the
+   * preview and the arrival provably the same transform rather than two that happen to
+   * agree. Get one backwards and the view spins relative to where you come out.
+   *
+   * That lands the camera **behind the exit wall**, at the same perpendicular distance the
+   * player is standing from the entry wall, looking along the exit's inward normal. Outside
+   * the box, which sounds wrong and isn't: the shell's walls are single-sided, so the exit
+   * wall is back-facing from there and culls away, leaving the view looking through the
+   * hole it makes into the room. The floor and the other three walls stay front-facing.
+   *
+   * The projection is *copied*, not rebuilt. That's not a shortcut — the screen-space UVs in
+   * viewMaterial() are only a window if the preview was rendered through the player's own
+   * frustum, so sharing the matrix is the requirement. Copying it also means the resize
+   * handler's updateProjectionMatrix() reaches the previews for free.
+   */
+  _aimView(portal) {
+    const exit = this._exitFor(portal);
+    const { vcam } = portal;
+
+    vcam.matrixWorld
+      .copy(exit.frame)
+      .multiply(FLIP)
+      .multiply(portal.frameInverse)
+      .multiply(this.camera.matrixWorld);
+
+    vcam.projectionMatrix.copy(this.camera.projectionMatrix);
+    vcam.projectionMatrixInverse.copy(this.camera.projectionMatrixInverse);
   }
 
   /** The other one. The whole pairing rule, and why there are exactly two. */

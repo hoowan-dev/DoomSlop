@@ -37,7 +37,10 @@ const pickups = new PickupManager(scene, player);
 // to the scene at construction, and the count they add up to is what gets compiled
 // into every material's shader. Either order is fine as long as both happen before the
 // first render, which is the actual invariant (see effects.js).
-const portals = new Portals(scene, player);
+// The renderer and camera are for the previews only: a portal draws the far side
+// into its own target, through the player's own projection, which is what makes the
+// square read as a window rather than a screen. See _aimView() in portals.js.
+const portals = new Portals(scene, player, renderer, camera);
 const effects = new Effects(scene);
 const sound = new Sound();
 
@@ -115,6 +118,12 @@ player.onDamage = (amount, source) => {
 // access, deliberately. Red and green are one element flashing two colors, so the
 // green can't read as anything but the opposite of the red.
 player.onHeal = () => hud.vignette('heal');
+
+// Stepping through a portal. Same shape as every other hook here: portals.js moved the
+// player and reports that it did, and this is the only line in the codebase that knows
+// a traversal makes a noise. Nothing is passed — there's nothing about *which* pair of
+// walls was involved that the sound could use.
+portals.onTraverse = () => sound.teleport();
 
 // Likewise for kills: enemies.js reports a shot death, rounds.js counts it.
 // Routing it through here keeps the two from knowing about each other.
@@ -295,15 +304,22 @@ function frame() {
   // the state; this just reports it, and the HUD's own change cache means reading it
   // every frame costs a comparison.
   hud.updateMusic(sound.musicEnabled);
-  // Both raw arrays, not hitboxes() — that allocates one per call, and this runs
-  // every frame. Same two-array shape as updateGlows below, for the same reason.
-  minimap.draw(player, enemies.enemies, pickups.pickups);
+  // All three raw arrays, not hitboxes() — that allocates one per call, and this runs
+  // every frame. Same shape as updateGlows below, for the same reason.
+  minimap.draw(player, enemies.enemies, pickups.pickups, portals.portals);
   // The raw enemy array, like minimap.draw takes — hitboxes() would allocate one
   // every frame. Two arrays rather than one joined: the pools are separate, and
   // concatenating would allocate here too. After enemies.update()/pickups.update() so
   // the glows sit where the meshes ended up, and before render() so the light
   // positions are picked up this frame.
   effects.updateGlows(enemies.enemies, pickups.pickups, player.position);
+
+  // Each portal's view of the far side, drawn into its own render target. Outside the
+  // running check like the glows and the radar, so a doorway keeps showing the room it
+  // leads to behind the pause overlay instead of freezing on a stale frame. Last before
+  // the real render, because it renders too — it reads the camera player.update() moved
+  // and it leaves the render target set back to the canvas for the line below.
+  portals.renderViews();
 
   renderer.render(scene, camera);
 }
