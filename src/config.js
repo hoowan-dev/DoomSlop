@@ -158,7 +158,7 @@ export const PORTAL = {
 
 export const PLAYER = {
   eyeHeight: 1.7, // also the resting camera height, i.e. the ground for a jump
-  moveSpeed: 7, // units per second
+  moveSpeed: 10, // units per second
   lookSensitivity: 0.0022, // radians per pixel of mouse movement
   maxHealth: 100,
   // Armor points: a second pool that soaks damage before health does (see
