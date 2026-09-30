@@ -192,7 +192,9 @@ Two more assertions worth keeping:
 - Read `#health` / `#armor` / `#score` text. They start as literal `HP --` / `AP --` / `SCORE --` in the HTML and are only filled in by `hud.update()`, so `HP 100` proves the loop actually reached the HUD rather than dying at import time. `AP 0` is the useful one for the armor pair — a run starts with no armor, so the placeholder is what distinguishes "empty" from "never written".
 - Always check `console --errors` / `pageerror`. A dark scene and a failed scene are hard to tell apart in a screenshot.
 
-Headless Chrome needs `--use-angle=swiftshader --enable-unsafe-swiftshader` or WebGL won't come up at all. Pointer lock *does* work headless, so the click-to-play path is testable.
+Headless Chrome needs `--use-angle=swiftshader --enable-unsafe-swiftshader` or WebGL won't come up at all.
+
+**Every driver must call `fakePointerLock(page)` (from `%TEMP%\doomslop-fakelock.mjs`) right after `newPage()`, and a new driver must too.** Chrome's `--headless` is the full browser with a hidden window, so a *real* `requestPointerLock()` confines and hides the user's desktop cursor on Windows for the whole run — the drivers used to grab the mouse every time one clicked to play. The stand-in is an init script that replaces `requestPointerLock` / `exitPointerLock` / `pointerLockElement` and fires `pointerlockchange` a task later, which is the contract `input.js` and main.js actually depend on; the click-to-play path is still exercised end to end, it just no longer captures the OS cursor. `movementX` still arrives on `page.mouse.move()` and synthetic `MouseEvent`s without a real lock.
 
 ## Architecture
 
