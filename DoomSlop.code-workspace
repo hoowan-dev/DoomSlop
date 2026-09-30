@@ -4,5 +4,9 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"obsidian-md-vsc.defaultVault": "Hoowan Vault",
+		"obsidian-md-vsc.defaultVaultPath": "C:\\Users\\jbecerra\\Documents\\Obsidian\\Hoowan Vault",
+		"obsidian-md-vsc.defaultNote": "Work\\EA\\VSCode\\DoomSlop Vault Note"
+	}
 }
