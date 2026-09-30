@@ -80,6 +80,11 @@ if [ "$OPEN" = 1 ]; then
 fi
 
 # --strict-port turns "5173 is taken" into an error instead of a different port.
+# --host 127.0.0.1 because Vite's default binds whatever `localhost` resolves to
+# first, which on this machine is ::1 alone — and VS Code's built-in browser
+# resolves localhost to 127.0.0.1 and gets ERR_CONNECTION_REFUSED. Clients that
+# try ::1 first (Chrome, curl, Node) fall back to IPv4; that one doesn't fall
+# back the other way. Loopback only, so this doesn't expose the server.
 # The base stays relative (vite.config.js) and the server stays at the root,
 # which is where the drivers navigate — don't add a base here.
-exec npm run dev -- --port 5173 --strict-port
+exec npm run dev -- --host 127.0.0.1 --port 5173 --strict-port

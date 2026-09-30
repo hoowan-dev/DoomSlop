@@ -178,6 +178,11 @@ const weapon = new Weapon(
 
 let running = false;
 let gameOver = false;
+// Which of the three things the one overlay is currently saying. The lock state only
+// says paused-or-playing, so "this is the start screen, not a pause" has to be a flag
+// alongside gameOver — see returnToTitle(). True at boot, since that's what index.html
+// has on screen before the first click.
+let atTitle = true;
 
 function resize() {
   const w = window.innerWidth;
@@ -201,14 +206,17 @@ hud.overlayEl.addEventListener('click', () => {
 input.onLockChange = (locked) => {
   running = locked;
   if (locked) {
+    atTitle = false;
     hud.hideOverlay();
     sound.click(true);
-  } else if (!gameOver) {
+  } else if (!gameOver && !atTitle) {
     hud.showOverlay('PAUSED', 'Click to resume');
     sound.click(false);
   }
   // Death also releases the lock, but endGame() owns that feedback — a pause
   // click on top of dying would read as the game acknowledging a keypress.
+  // Same for a restart: returnToTitle() has already raised its own overlay, and
+  // `atTitle` is what stops this turning it into PAUSED a task later.
 };
 
 function restart() {
@@ -225,6 +233,23 @@ function restart() {
   rounds.reset();
   score = 0;
   gameOver = false;
+}
+
+// Back to the click-to-play screen, which is the whole of what R does that a round
+// reset doesn't: the run is gone, so the next one should start the way the first one
+// did rather than dropping the player into round 1 already moving. Shaped like
+// endGame() and for the same reasons — `running` is cleared here rather than left to
+// the lock handler, because pointerlockchange arrives a task later and the rest of
+// this frame would otherwise keep playing; and the overlay is raised here rather
+// than there because there is nothing in the lock state that distinguishes "gave up"
+// from "paused". That's what `atTitle` carries, and it's also what keeps the ROUND 1
+// flash rounds.reset() just queued from firing behind this overlay: it stays in the
+// queue until a frame actually runs, which is the click that starts the next run.
+function returnToTitle() {
+  atTitle = true;
+  running = false;
+  document.exitPointerLock();
+  hud.showOverlay('DOOMSLOP', 'Click to play');
 }
 
 function endGame() {
@@ -246,6 +271,17 @@ function frame() {
   // Belt and suspenders on top of Timer's visibility handling: a single long
   // frame (GC pause, slow hitch) shouldn't tunnel anything through a wall.
   const dt = Math.min(timer.getDelta(), 0.1);
+
+  // Give up on the run. Same shape as the skip and the music toggle below — input.js
+  // hands over the edge and main.js is the only thing that knows R means start again —
+  // but read *above* the update block rather than inside it, because it's the one key
+  // that ends the frame it lands on: returnToTitle() clears `running`, so nothing
+  // steers, spawns or announces into the arena that was just swept. The press edge and
+  // not isDown(), or holding R would wipe the run on every frame it's held.
+  if (running && input.consumePress('KeyR')) {
+    restart();
+    returnToTitle();
+  }
 
   if (running) {
     // Skip-round cheat. Read here rather than in input.js because "~ means skip a
